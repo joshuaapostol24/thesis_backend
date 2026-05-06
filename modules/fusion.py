@@ -16,9 +16,18 @@ def fuse_risk(predicted: float, rule_score: float, alpha: float = 0.5, beta: flo
     Note: alpha + beta should equal 1.0 for interpretable results.
     """
     if abs((alpha + beta) - 1.0) > 1e-6:
-        logger.warning("alpha + beta = %.2f (expected 1.0). Results may not be normalized.", alpha + beta)
+        logger.warning("alpha + beta = %.2f (expected 1.0)", alpha + beta)
 
-    fused = (alpha * predicted) + (beta * rule_score)
-    logger.debug("Fused risk: alpha=%.2f * predicted=%.4f + beta=%.2f * rule=%.4f = %.4f",
-                 alpha, predicted, beta, rule_score, fused)
+    predicted_norm = max(0.0, min(1.0, predicted / 3.0))
+    rule_norm      = max(0.0, min(1.0, rule_score))
+
+    fused_norm = (alpha * predicted_norm) + (beta * rule_norm)
+
+    fused = fused_norm * 3.0
+
+    logger.debug(
+        "Fusion | predicted=%.4f norm=%.4f | rule=%.4f | fused=%.4f",
+        predicted, predicted_norm, rule_score, fused
+    )
+
     return fused

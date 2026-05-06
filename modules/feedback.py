@@ -43,8 +43,10 @@ def store_data(
 
     # raw features (IMPORTANT for retraining CNN + LSTM)
     "rainfall": HR.get("rainfall"),
+    "humidity": HR.get("humidity"),
     "soil": HR.get("soil"),
     "flood": HR.get("flood"),
+    "storm_surge": HR.get("storm_surge"),
 
     # model outputs
     "rule_score": round(rule_score, 4),

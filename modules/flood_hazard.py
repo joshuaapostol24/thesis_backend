@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from .config import get_database_url
+
 logger = logging.getLogger(__name__)
 
 # Hazard mapping (Var value → flood score)
@@ -29,8 +31,7 @@ def lookup_flood_hazard(lat: float, lon: float) -> float:
     """
     try:
         import psycopg2
-        DATABASE_URL = "postgresql://postgres:123apostol@127.0.0.1:5432/thesis_db"
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(get_database_url())
         cur = conn.cursor()
 
         # Primary: check if point is inside a polygon
