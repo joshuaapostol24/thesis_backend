@@ -133,7 +133,7 @@ def load_barangay_data(barangay_id: int):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT rainfall, soil, flood, risk_label
+        SELECT rainfall, humidity, soil, flood, storm_surge, risk_label
         FROM barangay_training_data
         WHERE barangay_id = %s
         ORDER BY id DESC
@@ -150,19 +150,31 @@ def load_barangay_data(barangay_id: int):
     # Reverse so data is in chronological order
     rows = list(reversed(rows))
 
-    df = pd.DataFrame(rows, columns=["rainfall", "soil", "flood", "risk_label"])
+    df = pd.DataFrame(
+    rows,
+    columns=[
+        "rainfall",
+        "humidity",
+        "soil",
+        "flood",
+        "storm_surge",
+        "risk_label"
+    ]
+    )
 
     df["r_n"] = df["rainfall"].apply(lambda v: _norm(v, "rainfall"))
     df["s_n"] = df["soil"].apply(lambda v: _norm(v, "soil"))
     df["f_n"] = df["flood"].apply(lambda v: _norm(v, "flood"))
+    df["h_n"]  = df["humidity"].apply(lambda v: _norm(v, "humidity"))
+    df["ss_n"] = df["storm_surge"].apply(lambda v: _norm(v, "storm_surge"))
 
     points, seqs, labels = [], [], []
 
     for i in range(SEQ_LEN, len(df)):
         window = df.iloc[i - SEQ_LEN:i]
-        seq = window[["r_n", "s_n", "f_n"]].values.tolist()
+        seq = window[["r_n", "h_n", "s_n", "f_n", "ss_n"]].values.tolist()
         row = df.iloc[i]
-        pt = [row["r_n"], row["s_n"], row["f_n"]]
+        pt = [row["r_n"], row["h_n"],row["s_n"], row["f_n"],row["ss_n"]]
         lbl = max(0.0, min(3.0, float(row["risk_label"])))
         points.append(pt)
         seqs.append(seq)
