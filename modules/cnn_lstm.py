@@ -36,10 +36,10 @@ logger = logging.getLogger(__name__)
 POINT_FEATURES = ["rainfall", "humidity", "soil", "flood", "storm_surge"]
 
 INDICATOR_RANGES = {
-    "rainfall":    (0.0, 100.0),
-    "humidity":    (0.0, 100.0),
-    "soil":        (0.0, 3.0),
-    "flood":       (0.0, 1.0),
+    "rainfall": (0.0, 5.0),
+    "humidity": (0.0, 100.0),
+    "soil": (0.0, 3.0),
+    "flood": (0.0, 4.0),
     "storm_surge": (0.0, 5.0),
 }
 
@@ -69,7 +69,7 @@ def _weights_path(barangay_id: int) -> Path:
 # ── Model definition ───────────────────────────────────────────────────────────
 
 class CnnLstmRiskModel(nn.Module):
-    def __init__(self, n_features=3, cnn_channels=32, lstm_hidden=64, fc_hidden=64):
+    def __init__(self, n_features=5, cnn_channels=32, lstm_hidden=64, fc_hidden=64):
         super().__init__()
 
         self.cnn = nn.Sequential(

@@ -60,10 +60,15 @@ async def lifespan(app: FastAPI):
         "true"
     ):
 
-        preload_all_models()
+        import threading
+
+        threading.Thread(
+            target=preload_all_models,
+            daemon=True
+        ).start()
 
         logger.info(
-            "Models preloaded successfully."
+            "Background model preload started."
         )
 
     else:
@@ -116,7 +121,7 @@ app.add_middleware(
 def root():
 
     return {
-        "message": "Disaster Management API Running"
+        "message": "Disa    ster Management API Running"
     }
 
 
