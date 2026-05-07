@@ -1,0 +1,27 @@
+import os
+import requests
+
+SEMAPHORE_API_KEY = os.getenv(
+    "SEMAPHORE_API_KEY"
+)
+
+
+def send_sms(
+    number: str,
+    message: str
+):
+
+    url = "https://api.semaphore.co/api/v4/messages"
+
+    payload = {
+        "apikey": SEMAPHORE_API_KEY,
+        "number": number,
+        "message": message,
+    }
+
+    response = requests.post(
+        url,
+        data=payload
+    )
+
+    return response.json()

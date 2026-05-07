@@ -9,7 +9,7 @@ Supports 15 barangays. Each barangay has its own:
 
 Architecture
 ────────────
-  CNN branch  : 1-D convolutions over point features
+  CNN branch  : 1-D convolutions over point features (rainfall, soil, flood)
   LSTM branch : processes SEQ_LEN historical readings
   Fusion head : CNN + LSTM → dense → scalar risk score in [0.0, 3.0]
 """
@@ -20,7 +20,6 @@ import concurrent.futures
 import logging
 import os
 import threading
-from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -30,20 +29,16 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from .config import get_database_url, get_supabase_key, get_supabase_url
-
 logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-POINT_FEATURES: List[str] = ["rainfall", "humidity", "soil", "flood", "storm_surge"]
+POINT_FEATURES = ["rainfall", "humidity", "soil", "flood", "storm_surge"]
 
 INDICATOR_RANGES = {
-    "rainfall":    (0.0, 100.0),
-    "humidity":    (0.0, 100.0),
-    "soil":        (0.0, 3.0),
-    "flood":       (0.0, 1.0),
-    "storm_surge": (0.0, 1.0),
+    "rainfall": (0.0, 100.0),
+    "soil":     (0.0, 3.0),
+    "flood":    (0.0, 1.0),
 }
 
 BARANGAY_IDS: List[int] = list(range(1, 16))   # 1 – 15
@@ -54,92 +49,19 @@ _BATCH_SIZE    = 256      # increased from 64 for faster training
 _MAX_ROWS      = 730      # use last 2 years of data (faster, still accurate)
 SEQ_LEN        = 10
 
+DATABASE_URL = (
+    "postgresql://postgres.jpovamcznyzoemcnjrgs:"
+    "123Apostol%40Coco"
+    "@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
+    "?sslmode=require"
+)
 # Paths
 _WEIGHTS_DIR = Path(os.environ.get("BARANGAY_WEIGHTS_DIR", "weights"))
 _WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
-_WEIGHTS_BUCKET = os.environ.get("BARANGAY_WEIGHTS_BUCKET", "model-weights")
-_TRAIN_IF_MISSING = os.environ.get("CNN_LSTM_TRAIN_IF_MISSING", "true").lower() in {
-    "1", "true", "yes", "y", "on"
-}
 
 
 def _weights_path(barangay_id: int) -> Path:
     return _WEIGHTS_DIR / f"cnn_lstm_barangay_{barangay_id:02d}.pt"
-
-
-def _weights_storage_path(barangay_id: int) -> str:
-    return f"cnn_lstm_barangay_{barangay_id:02d}.pt"
-
-
-def _supabase_client():
-    from supabase import create_client
-
-    return create_client(get_supabase_url(), get_supabase_key())
-
-
-def _load_weights_file(model: CnnLstmRiskModel, path: Path, barangay_id: int) -> bool:
-    if not path.exists():
-        return False
-    try:
-        model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
-        logger.info("Barangay %02d - weights loaded from '%s'.", barangay_id, path)
-        return True
-    except Exception as exc:
-        logger.warning("Barangay %02d - local weights could not load (%s).", barangay_id, exc)
-        return False
-
-
-def _download_weights_from_supabase(model: CnnLstmRiskModel, barangay_id: int) -> bool:
-    storage_path = _weights_storage_path(barangay_id)
-    try:
-        data = _supabase_client().storage.from_(_WEIGHTS_BUCKET).download(storage_path)
-        model.load_state_dict(torch.load(BytesIO(data), map_location="cpu", weights_only=True))
-        _weights_path(barangay_id).write_bytes(data)
-        logger.info(
-            "Barangay %02d - weights downloaded from Supabase Storage bucket '%s'.",
-            barangay_id,
-            _WEIGHTS_BUCKET,
-        )
-        return True
-    except Exception as exc:
-        logger.warning(
-            "Barangay %02d - could not download weights from Supabase Storage (%s).",
-            barangay_id,
-            exc,
-        )
-        return False
-
-
-def _upload_weights_to_supabase(barangay_id: int) -> None:
-    path = _weights_path(barangay_id)
-    storage_path = _weights_storage_path(barangay_id)
-    if not path.exists():
-        logger.warning("Barangay %02d - no local weight file to upload.", barangay_id)
-        return
-
-    bucket = _supabase_client().storage.from_(_WEIGHTS_BUCKET)
-    data = path.read_bytes()
-    try:
-        bucket.upload(
-            storage_path,
-            data,
-            file_options={"content-type": "application/octet-stream", "upsert": "true"},
-        )
-    except Exception:
-        try:
-            bucket.remove([storage_path])
-        except Exception:
-            pass
-        bucket.upload(
-            storage_path,
-            data,
-            file_options={"content-type": "application/octet-stream"},
-        )
-    logger.info(
-        "Barangay %02d - weights uploaded to Supabase Storage bucket '%s'.",
-        barangay_id,
-        _WEIGHTS_BUCKET,
-    )
 
 
 # ── Model definition ───────────────────────────────────────────────────────────
@@ -203,65 +125,24 @@ def _build_seq(H: dict, n_features: int):
 
 # ── Database data loader ───────────────────────────────────────────────────────
 
-def _load_rows_from_postgres(barangay_id: int):
+def load_barangay_data(barangay_id: int):
+    """Load training data from PostgreSQL database."""
     import psycopg2
 
-    conn = psycopg2.connect(get_database_url())
+    conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT rainfall, humidity, soil, flood, storm_surge, risk_label
-            FROM barangay_training_data
-            WHERE barangay_id = %s
-            ORDER BY timestamp DESC NULLS LAST, id DESC
-            LIMIT %s
-        """, (barangay_id, _MAX_ROWS))
-        return cur.fetchall()
-    finally:
-        cur.close()
-        conn.close()
 
+    cur.execute("""
+        SELECT rainfall, soil, flood, risk_label
+        FROM barangay_training_data
+        WHERE barangay_id = %s
+        ORDER BY id DESC
+        LIMIT %s
+    """, (barangay_id, _MAX_ROWS))
 
-def _load_rows_from_supabase(barangay_id: int):
-    from supabase import create_client
-
-    client = create_client(get_supabase_url(), get_supabase_key())
-    response = (
-        client.table("barangay_training_data")
-        .select("rainfall,humidity,soil,flood,storm_surge,risk_label,timestamp,id")
-        .eq("barangay_id", barangay_id)
-        .order("timestamp", desc=True, nullsfirst=False)
-        .order("id", desc=True)
-        .limit(_MAX_ROWS)
-        .execute()
-    )
-    rows = response.data or []
-    return [
-        (
-            row.get("rainfall", 0),
-            row.get("humidity", 0),
-            row.get("soil", 0),
-            row.get("flood", 0),
-            row.get("storm_surge", 0),
-            row.get("risk_label", 0),
-        )
-        for row in rows
-    ]
-
-
-def load_barangay_data(barangay_id: int):
-    """Load training data from Supabase Postgres or Supabase REST API."""
-    try:
-        rows = _load_rows_from_postgres(barangay_id)
-        logger.info("Barangay %02d - loaded training rows via direct Postgres.", barangay_id)
-    except Exception as exc:
-        logger.warning(
-            "Barangay %02d - direct Postgres load failed (%s). Falling back to Supabase API.",
-            barangay_id,
-            exc,
-        )
-        rows = _load_rows_from_supabase(barangay_id)
-        logger.info("Barangay %02d - loaded training rows via Supabase API.", barangay_id)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
 
     if not rows:
         raise ValueError(f"No training data found for barangay_id={barangay_id}")
@@ -269,25 +150,19 @@ def load_barangay_data(barangay_id: int):
     # Reverse so data is in chronological order
     rows = list(reversed(rows))
 
-    df = pd.DataFrame(rows, columns=[*POINT_FEATURES, "risk_label"])
-    if len(df) <= SEQ_LEN:
-        raise ValueError(
-            f"Need more than {SEQ_LEN} rows for barangay_id={barangay_id}; got {len(df)}"
-        )
+    df = pd.DataFrame(rows, columns=["rainfall", "soil", "flood", "risk_label"])
 
-    norm_columns = []
-    for feature in POINT_FEATURES:
-        norm_col = f"{feature}_n"
-        df[norm_col] = df[feature].fillna(0).apply(lambda v, key=feature: _norm(float(v), key))
-        norm_columns.append(norm_col)
+    df["r_n"] = df["rainfall"].apply(lambda v: _norm(v, "rainfall"))
+    df["s_n"] = df["soil"].apply(lambda v: _norm(v, "soil"))
+    df["f_n"] = df["flood"].apply(lambda v: _norm(v, "flood"))
 
     points, seqs, labels = [], [], []
 
     for i in range(SEQ_LEN, len(df)):
         window = df.iloc[i - SEQ_LEN:i]
-        seq = window[norm_columns].values.tolist()
+        seq = window[["r_n", "s_n", "f_n"]].values.tolist()
         row = df.iloc[i]
-        pt = row[norm_columns].values.tolist()
+        pt = [row["r_n"], row["s_n"], row["f_n"]]
         lbl = max(0.0, min(3.0, float(row["risk_label"])))
         points.append(pt)
         seqs.append(seq)
@@ -359,33 +234,6 @@ def _load_or_train_barangay(barangay_id: int) -> CnnLstmRiskModel:
         model = _train_model(barangay_id)
         torch.save(model.state_dict(), wp)
         logger.info("Barangay %02d — weights saved to '%s'.", barangay_id, wp)
-
-    model.eval()
-    return model
-
-
-def _load_or_train_barangay(barangay_id: int) -> CnnLstmRiskModel:
-    model = CnnLstmRiskModel(n_features=len(POINT_FEATURES))
-    wp = _weights_path(barangay_id)
-
-    if _load_weights_file(model, wp, barangay_id) or _download_weights_from_supabase(model, barangay_id):
-        model.eval()
-        return model
-
-    if not _TRAIN_IF_MISSING:
-        raise RuntimeError(
-            f"No weights found for barangay_id={barangay_id}. "
-            f"Upload cnn_lstm_barangay_{barangay_id:02d}.pt to Supabase Storage "
-            f"bucket '{_WEIGHTS_BUCKET}' or set CNN_LSTM_TRAIN_IF_MISSING=true."
-        )
-
-    model = _train_model(barangay_id)
-    torch.save(model.state_dict(), wp)
-    logger.info("Barangay %02d - weights saved to '%s'.", barangay_id, wp)
-    try:
-        _upload_weights_to_supabase(barangay_id)
-    except Exception as exc:
-        logger.warning("Barangay %02d - weight upload failed: %s", barangay_id, exc)
 
     model.eval()
     return model
@@ -463,10 +311,6 @@ def retrain_barangay(barangay_id: int,
 
     model = _train_model(barangay_id)
     torch.save(model.state_dict(), _weights_path(barangay_id))
-    try:
-        _upload_weights_to_supabase(barangay_id)
-    except Exception as exc:
-        logger.warning("Barangay %02d - weight upload failed: %s", barangay_id, exc)
     model.eval()
     with _registry_lock:
         _registry[barangay_id] = model
