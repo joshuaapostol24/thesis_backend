@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ml_service_python.modules.sms_service import (
+from modules.sms_service import (
     send_sms
 )
 
