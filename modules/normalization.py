@@ -7,7 +7,6 @@ INDICATOR_RANGES = {
     "rainfall": (0.0, 40.0),
     "soil":     (0.0, 3.0),
     "flood":    (0.0, 1.0),
-    "report":   (0.0, 1.0),
 }
 
 # ── Per-barangay rainfall bounds ──────────────────────────────────────────────
@@ -103,7 +102,6 @@ def compute_weighted_scores(
         "rainfall": float(E.get("rainfall", 0)),
         "soil":     float(E.get("soil", 0)),
         "flood":    float(E.get("flood", 0)),
-        "report":   float(HR.get("verified", 0)),
     }
 
     weighted_scores = []

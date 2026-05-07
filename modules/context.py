@@ -14,10 +14,9 @@ BASE_WEIGHTS = {
     "rainfall": 0.40,
     "soil":     0.30,
     "flood":    0.20,
-    "report":   0.10,
 }
 
-INDICATOR_SET = ["rainfall", "soil", "flood", "report"]
+INDICATOR_SET = ["rainfall", "soil", "flood"]
 
 # ── Per-barangay hazard profiles (from barangay_hazard_profile.csv) ───────────
 # These are the actual values from your shapefiles — not survey means
@@ -74,7 +73,6 @@ def compute_barangay_weights(barangay_id: int, hazard_profile: dict = None) -> d
                 "rainfall": 0.22,
                 "soil":     0.28,
                 "flood":    0.40,
-                "report":   0.10,
             }
         else:
             # HIGH flood only — no storm surge
@@ -82,7 +80,6 @@ def compute_barangay_weights(barangay_id: int, hazard_profile: dict = None) -> d
                 "rainfall": 0.25,
                 "soil":     0.30,
                 "flood":    0.35,
-                "report":   0.10,
             }
 
     elif overall == "LOW":
@@ -91,7 +88,6 @@ def compute_barangay_weights(barangay_id: int, hazard_profile: dict = None) -> d
             "rainfall": 0.50,
             "soil":     0.28,
             "flood":    0.12,
-            "report":   0.10,
         }
 
     else:

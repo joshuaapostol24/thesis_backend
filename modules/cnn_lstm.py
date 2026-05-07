@@ -9,7 +9,7 @@ Supports 15 barangays. Each barangay has its own:
 
 Architecture
 ────────────
-  CNN branch  : 1-D convolutions over point features (rainfall, soil, flood)
+  CNN branch  : 1-D convolutions over point features (rainfall, flood)
   LSTM branch : processes SEQ_LEN historical readings
   Fusion head : CNN + LSTM → dense → scalar risk score in [0.0, 3.0]
 """
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 POINT_FEATURES = ["rainfall", "humidity", "soil", "flood", "storm_surge"]
 
 INDICATOR_RANGES = {
-    "rainfall": (0.0, 5.0),
+    "rainfall": (0.0, 50.0),
     "humidity": (0.0, 100.0),
     "soil": (0.0, 3.0),
     "flood": (0.0, 4.0),

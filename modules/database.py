@@ -223,7 +223,7 @@ def get_recent_weather(barangay_id: int, limit: int = 10) -> list:
             SELECT timestamp, temperature, pressure, humidity,
                    wind_speed, rainfall, rainfall_category,
                    season, risk_level
-            FROM weather_observations
+            FROM weather_data
             WHERE city = 'Mamburao'
             ORDER BY timestamp DESC
             LIMIT %s
