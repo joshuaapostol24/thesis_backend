@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter
 
-from ml_service_python.modules.database import (
+from modules.database import (
     get_connection,
     get_barangay_centroid,
     get_barangay_name,

@@ -1,4 +1,4 @@
-from ml_service_python.modules.database import (
+from modules.database import (
     get_connection
 )
 

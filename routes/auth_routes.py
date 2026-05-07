@@ -16,7 +16,7 @@ from fastapi.security import (
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 
-from ml_service_python.modules.database import (
+from modules.database import (
     get_connection
 )
 

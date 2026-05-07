@@ -3,7 +3,7 @@ import logging
 import psycopg2
 from sqlalchemy import create_engine
 
-from ml_service_python.modules.config import get_database_url
+from modules.config import get_database_url
 
 logger = logging.getLogger(__name__)
 

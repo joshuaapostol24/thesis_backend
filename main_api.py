@@ -5,21 +5,21 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from ml_service_python.modules.cnn_lstm import preload_all_models
+from modules.cnn_lstm import preload_all_models
 
-from ml_service_python.routes.auth_routes import (
+from routes.auth_routes import (
     router as auth_router
 )
 
-from ml_service_python.routes.barangay_routes import (
+from routes.barangay_routes import (
     router as barangay_router
 )
 
-from ml_service_python.routes.prediction_routes import (
+from routes.prediction_routes import (
     router as prediction_router
 )
 
-from ml_service_python.routes.sms_routes import (
+from routes.sms_routes import (
     router as sms_router
 )
 

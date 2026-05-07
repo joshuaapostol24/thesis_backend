@@ -3,19 +3,19 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ml_service_python.modules.context import load_context
-from ml_service_python.modules.normalization import compute_weighted_scores
-from ml_service_python.modules.rule_engine import (
+from modules.context import load_context
+from modules.normalization import compute_weighted_scores
+from modules.rule_engine import (
     compute_risk_score,
     apply_rules
 )
 
-from ml_service_python.modules.cnn_lstm import predict_risk
-from ml_service_python.modules.fusion import fuse_risk
-from ml_service_python.modules.feedback import store_data
-from ml_service_python.modules.weather_api import get_weather
+from modules.cnn_lstm import predict_risk
+from modules.fusion import fuse_risk
+from modules.feedback import store_data
+from modules.weather_api import get_weather
 
-from ml_service_python.modules.database import (
+from modules.database import (
     get_barangay_features,
     get_barangay_centroid,
     get_barangay_name,
