@@ -36,9 +36,11 @@ logger = logging.getLogger(__name__)
 POINT_FEATURES = ["rainfall", "humidity", "soil", "flood", "storm_surge"]
 
 INDICATOR_RANGES = {
-    "rainfall": (0.0, 100.0),
-    "soil":     (0.0, 3.0),
-    "flood":    (0.0, 1.0),
+    "rainfall":    (0.0, 100.0),
+    "humidity":    (0.0, 100.0),
+    "soil":        (0.0, 3.0),
+    "flood":       (0.0, 1.0),
+    "storm_surge": (0.0, 5.0),
 }
 
 BARANGAY_IDS: List[int] = list(range(1, 16))   # 1 – 15
