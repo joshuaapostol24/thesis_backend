@@ -191,7 +191,7 @@ def get_barangay_features(barangay_id: int) -> dict:
     try:
         cur.execute("""
             SELECT rainfall, flood
-            FROM barangay_weather
+             FROM weather_data
             WHERE barangay_id = %s
             ORDER BY timestamp DESC
             LIMIT 1
