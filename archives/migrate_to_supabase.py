@@ -11,7 +11,7 @@ import pandas as pd
 from supabase import create_client
 from shapely.geometry import Point
 
-from ml_service_python.modules.config import get_supabase_key, get_supabase_url
+from modules.config import get_supabase_key, get_supabase_url
 
 # ── Supabase config ───────────────────────────────────────────────────────────
 SUPABASE_URL = get_supabase_url()

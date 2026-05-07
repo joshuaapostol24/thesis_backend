@@ -13,21 +13,24 @@ from fastapi.security import (
     HTTPAuthorizationCredentials
 )
 
-from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import (
+    BaseModel,
+    EmailStr
+)
+
+from supabase import create_client
 
 from modules.database import (
     get_connection
 )
 
+# =========================================================
+# ROUTER
+# =========================================================
+
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"]
-)
-
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto"
 )
 
 security = HTTPBearer()
@@ -37,6 +40,18 @@ SECRET_KEY = os.environ.get(
     "your-secret-key"
 )
 
+SUPABASE_URL = os.environ.get(
+    "SUPABASE_URL"
+)
+
+SUPABASE_KEY = os.environ.get(
+    "SUPABASE_KEY"
+)
+
+supabase = create_client(
+    SUPABASE_URL,
+    SUPABASE_KEY
+)
 
 # =========================================================
 # MODELS
@@ -115,7 +130,7 @@ def verify_token(
 # DATABASE HELPERS
 # =========================================================
 
-def get_user_by_email(email: str):
+def get_profile_by_email(email: str):
 
     conn = get_connection()
     cur = conn.cursor()
@@ -128,8 +143,7 @@ def get_user_by_email(email: str):
                 name,
                 address,
                 email,
-                mobile_number,
-                password
+                mobile_number
             FROM users
             WHERE email = %s
         """, (email,))
@@ -140,12 +154,11 @@ def get_user_by_email(email: str):
             return None
 
         return {
-            "id": row[0],
+            "id": str(row[0]),
             "name": row[1],
             "address": row[2],
             "email": row[3],
             "mobile_number": row[4],
-            "password": row[5],
         }
 
     finally:
@@ -153,12 +166,11 @@ def get_user_by_email(email: str):
         conn.close()
 
 
-def create_user(
+def create_profile(
     name: str,
     address: str,
     email: str,
-    mobile_number: str,
-    hashed_password: str
+    mobile_number: str
 ):
 
     conn = get_connection()
@@ -171,16 +183,14 @@ def create_user(
                 name,
                 address,
                 email,
-                mobile_number,
-                password
+                mobile_number
             )
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s)
         """, (
             name,
             address,
             email,
-            mobile_number,
-            hashed_password
+            mobile_number
         ))
 
         conn.commit()
@@ -200,7 +210,7 @@ def create_user(
 )
 def signup(data: SignUpRequest):
 
-    existing_user = get_user_by_email(
+    existing_user = get_profile_by_email(
         data.email
     )
 
@@ -211,19 +221,36 @@ def signup(data: SignUpRequest):
             detail="Email already exists"
         )
 
-    hashed_password = pwd_context.hash(
-        data.password
-    )
+    # =====================================================
+    # CREATE AUTH ACCOUNT
+    # =====================================================
 
-    create_user(
+    auth_response = supabase.auth.sign_up({
+        "email": data.email,
+        "password": data.password
+    })
+
+    if not auth_response.user:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Signup failed"
+        )
+
+    # =====================================================
+    # CREATE PROFILE
+    # =====================================================
+
+    create_profile(
         data.name,
         data.address,
         data.email,
-        data.mobile_number,
-        hashed_password
+        data.mobile_number
     )
 
-    token = create_token(data.email)
+    token = create_token(
+        data.email
+    )
 
     return UserResponse(
         name=data.name,
@@ -244,28 +271,32 @@ def signup(data: SignUpRequest):
 )
 def login(data: LoginRequest):
 
-    user = get_user_by_email(
+    auth_response = supabase.auth.sign_in_with_password({
+        "email": data.email,
+        "password": data.password
+    })
+
+    if not auth_response.user:
+
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
+
+    user = get_profile_by_email(
         data.email
     )
 
     if not user:
 
         raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
+            status_code=404,
+            detail="Profile not found"
         )
 
-    if not pwd_context.verify(
-        data.password,
-        user["password"]
-    ):
-
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
-        )
-
-    token = create_token(data.email)
+    token = create_token(
+        data.email
+    )
 
     return UserResponse(
         name=user["name"],
@@ -285,7 +316,9 @@ def get_me(
     email: str = Depends(verify_token)
 ):
 
-    user = get_user_by_email(email)
+    user = get_profile_by_email(
+        email
+    )
 
     if not user:
 
@@ -294,10 +327,4 @@ def get_me(
             detail="User not found"
         )
 
-    return {
-        "id": user["id"],
-        "name": user["name"],
-        "address": user["address"],
-        "email": user["email"],
-        "mobile_number": user["mobile_number"]
-    }
+    return user

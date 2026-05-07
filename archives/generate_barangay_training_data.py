@@ -14,7 +14,7 @@ import requests
 import psycopg2
 from supabase import create_client
 
-from ml_service_python.modules.config import (
+from modules.config import (
     get_database_url,
     get_supabase_key,
     get_supabase_url,

@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
 
     if _env_enabled(
         "PRELOAD_MODELS_ON_STARTUP",
-        "true"
+        "false"
     ):
 
         import threading

@@ -2,7 +2,7 @@ import pandas as pd
 import psycopg2
 import os
 
-from ml_service_python.modules.config import get_database_url
+from modules.config import get_database_url
 
 DATABASE_URL = get_database_url()
 
