@@ -20,6 +20,7 @@ import concurrent.futures
 import logging
 import os
 import threading
+
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -238,7 +239,7 @@ def _load_or_train_barangay(barangay_id: int) -> CnnLstmRiskModel:
     if wp.exists():
         try:
             model.load_state_dict(
-                torch.load(wp, map_location="cpu", weights_only=True))
+              torch.load(wp, map_location="cpu"))
             logger.info("Barangay %02d — weights loaded from '%s'.", barangay_id, wp)
         except Exception as exc:
             logger.warning("Barangay %02d — could not load weights (%s). Retraining.", barangay_id, exc)
@@ -268,22 +269,32 @@ def get_model(barangay_id: int) -> CnnLstmRiskModel:
 
 def preload_all_models() -> None:
     """
-    Train/load all 15 barangay models in parallel at startup.
-    Uses 4 threads to speed up initial training significantly.
+    Load existing weights only.
+    Train only if weights do not exist.
     """
-    logger.info("Preloading all 15 barangay models...")
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {executor.submit(get_model, bid): bid for bid in BARANGAY_IDS}
-        for future in concurrent.futures.as_completed(futures):
-            bid = futures[future]
-            try:
-                future.result()
-                logger.info("✅ Barangay %02d model ready.", bid)
-            except Exception as e:
-                logger.error("❌ Barangay %02d failed: %s", bid, e)
+    logger.info("Loading barangay models...")
 
-    logger.info("All 15 barangay models loaded and ready!")
+    for bid in BARANGAY_IDS:
+
+        try:
+
+            get_model(bid)
+
+            logger.info(
+                "✅ Barangay %02d ready.",
+                bid
+            )
+
+        except Exception as e:
+
+            logger.error(
+                "❌ Barangay %02d failed: %s",
+                bid,
+                e
+            )
+
+    logger.info("All barangay models ready.")
 
 
 # ── Public inference API ───────────────────────────────────────────────────────

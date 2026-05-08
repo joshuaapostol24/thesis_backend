@@ -26,16 +26,18 @@ def save_weather_data(weather: dict):
                 pressure,
                 humidity,
                 wind_speed,
-                rainfall
+                rainfall,
+                timestamp
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (
             "Mamburao",
             weather.get("temperature"),
             weather.get("pressure"),
             weather.get("humidity"),
             weather.get("wind_speed"),
-            weather.get("rainfall")
+            weather.get("rainfall"),
+            datetime.utcnow()
         ))
 
         conn.commit()
@@ -107,7 +109,7 @@ def save_training_samples(weather: dict):
 
 
         current_time = datetime.utcnow()
-        
+
         for barangay_id, profile in barangay_profiles.items():
 
             cur.execute("""
