@@ -2,6 +2,7 @@ import requests
 import logging
 
 from modules.database import get_connection
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -11,30 +12,47 @@ API_KEY = "cd2c4c876fb8dd39eaf19513133fd4d3"
 # ✅ FREE WORKING ENDPOINT (NOT One Call 3.0)
 BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
     
-def save_weather_data(weather: dict) -> None:
+def save_weather_data(weather: dict):
+
     conn = get_connection()
     cur = conn.cursor()
+
     try:
+
         cur.execute("""
             INSERT INTO weather_data (
-                city, temperature, pressure, humidity,
-                wind_speed, rainfall, timestamp
+                city,
+                temperature,
+                pressure,
+                humidity,
+                wind_speed,
+                rainfall
             )
-            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s)
         """, (
             "Mamburao",
             weather.get("temperature"),
             weather.get("pressure"),
             weather.get("humidity"),
             weather.get("wind_speed"),
-            weather.get("rainfall"),
+            weather.get("rainfall")
         ))
+
         conn.commit()
-        logger.info("Weather data saved.")
+
+        logger.info(
+            "Weather data saved."
+        )
+
     except Exception as e:
-        conn.rollback()
-        logger.error("save_weather_data error: %s", e)
+
+        logger.error(
+            "save_weather_data error: %s",
+            e
+        )
+
     finally:
+
         cur.close()
         conn.close()
 
@@ -87,11 +105,15 @@ def save_training_samples(weather: dict):
 
             risk_label = 1
 
+
+        current_time = datetime.utcnow()
+        
         for barangay_id, profile in barangay_profiles.items():
 
             cur.execute("""
                 INSERT INTO barangay_training_data (
                     barangay_id,
+                    timestamp,
                     rainfall,
                     humidity,
                     soil,
@@ -99,9 +121,10 @@ def save_training_samples(weather: dict):
                     storm_surge,
                     risk_label
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 barangay_id,
+                current_time,
                 rainfall,
                 humidity,
                 profile["soil"],
@@ -117,7 +140,7 @@ def save_training_samples(weather: dict):
         )
 
     except Exception as e:
-
+        conn.rollback()
         logger.error(
             "save_training_samples error: %s",
             e
