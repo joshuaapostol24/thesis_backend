@@ -11,47 +11,30 @@ API_KEY = "cd2c4c876fb8dd39eaf19513133fd4d3"
 # ✅ FREE WORKING ENDPOINT (NOT One Call 3.0)
 BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
     
-def save_weather_data(weather: dict):
-
+def save_weather_data(weather: dict) -> None:
     conn = get_connection()
     cur = conn.cursor()
-
     try:
-
         cur.execute("""
             INSERT INTO weather_data (
-                city,
-                temperature,
-                pressure,
-                humidity,
-                wind_speed,
-                rainfall
+                city, temperature, pressure, humidity,
+                wind_speed, rainfall, timestamp
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW())
         """, (
             "Mamburao",
             weather.get("temperature"),
             weather.get("pressure"),
             weather.get("humidity"),
             weather.get("wind_speed"),
-            weather.get("rainfall")
+            weather.get("rainfall"),
         ))
-
         conn.commit()
-
-        logger.info(
-            "Weather data saved."
-        )
-
+        logger.info("Weather data saved.")
     except Exception as e:
-
-        logger.error(
-            "save_weather_data error: %s",
-            e
-        )
-
+        conn.rollback()
+        logger.error("save_weather_data error: %s", e)
     finally:
-
         cur.close()
         conn.close()
 
@@ -145,9 +128,7 @@ def save_training_samples(weather: dict):
         cur.close()
         conn.close()
 
-
 def get_weather(lat: float, lon: float) -> dict:
-
     url = (
         f"{BASE_URL}"
         f"?lat={lat}&lon={lon}"
