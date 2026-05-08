@@ -43,7 +43,7 @@ def list_barangay_profiles() -> list:
                 h.overall_hazard
             FROM barangay_list b
             LEFT JOIN barangay_hazard_profile h
-            ON b.barangay_id = h.barangay_id
+                ON b.barangay_id = h.barangay_id
             ORDER BY b.barangay_id
         """)
 
@@ -183,30 +183,48 @@ def get_barangay_hazard_profile(barangay_id: int) -> dict:
 
 def get_barangay_features(barangay_id: int) -> dict:
     """
-    Returns latest weather features from barangay_weather table.
-    Used as fallback in main_api.py when live weather API returns 0.
+    Returns the most recent weather reading for a barangay from weather_data.
+    Used as a fallback in main_api.py when the live weather API returns zeros.
+ 
+    NOTE: weather_data contains only observed meteorological fields
+    (rainfall, humidity, temperature, etc.).  It does NOT store a 'flood'
+    column — flood exposure is a static structural property read from
+    barangay_hazard_profile, not a live measurement.
+ 
+    The flood_hazard_score (0.2 / 0.6) returned here is on the rule-engine
+    scale (0–1).  The CNN+LSTM model uses its own raw-DB flood values
+    (1.8 / 3.2) sourced from barangay_training_data via repository.py.
     """
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT rainfall, flood
-             FROM weather_data
-            WHERE barangay_id = %s
+            SELECT rainfall, humidity
+            FROM weather_data
+            WHERE city = 'Mamburao'
             ORDER BY timestamp DESC
             LIMIT 1
-        """, (barangay_id,))
+        """, )
         row = cur.fetchone()
-        return {
-            "rainfall": float(row[0]) if row else 0.0,
-            "flood":    float(row[1]) if row else 0.0,
-        }
+        rainfall = float(row[0]) if row and row[0] is not None else 0.0
+        humidity = float(row[1]) if row and row[1] is not None else 0.0
     except Exception as e:
-        logger.error("get_barangay_features error: %s", e)
-        return {"rainfall": 0.0, "flood": 0.0}
+        logger.error("get_barangay_features weather query error: %s", e)
+        rainfall = 0.0
+        humidity = 0.0
     finally:
         cur.close()
         conn.close()
+ 
+    # Flood score comes from the hazard profile (structural exposure, 0–1 scale)
+    profile = get_barangay_hazard_profile(barangay_id)
+    flood_score = profile.get("flood_score", 0.20)
+ 
+    return {
+        "rainfall": rainfall,
+        "humidity": humidity,
+        "flood":    flood_score,   # rule-engine scale (0.0–1.0)
+    }
 
 
 def get_recent_weather(barangay_id: int, limit: int = 10) -> list:
