@@ -4,9 +4,11 @@ logger = logging.getLogger(__name__)
 
 # ── Global indicator ranges (fallback) ────────────────────────────────────────
 INDICATOR_RANGES = {
-    "rainfall": (0.0, 40.0),
-    "soil":     (0.0, 3.0),
-    "flood":    (0.0, 1.0),
+    "rainfall":    (0.0, 40.0),
+    "soil":        (0.0, 3.0),
+    "flood":       (0.0, 1.0),
+    "humidity":    (0.0, 100.0),      # NEW: % RH
+    "storm_surge": (0.0, 1.0),        # NEW: normalized hazard score
 }
 
 # ── Per-barangay rainfall bounds ──────────────────────────────────────────────
@@ -50,6 +52,33 @@ BARANGAY_FLOOD_BOUNDS = {
     15: (0.0, 0.60),   # Poblacion 8 — Medium flood + SSA3
 }
 
+# ── Per-barangay humidity bounds ──────────────────────────────────────────────
+# All barangays: 40–95% RH (tropical climate)
+# > 85% = saturation (high risk)
+BARANGAY_HUMIDITY_BOUNDS = {
+    i: (40.0, 95.0) for i in range(1, 16)
+}
+
+# ── Per-barangay storm surge bounds ──────────────────────────────────────────
+# Coastal (SSA3): 0–1.0 | Inland: 0–0.2
+BARANGAY_STORM_SURGE_BOUNDS = {
+    1:  (0.0, 1.0),   # Balansay — SSA3
+    2:  (0.0, 1.0),   # Fatima — SSA3
+    3:  (0.0, 1.0),   # Payompon — SSA3
+    4:  (0.0, 0.2),   # San Luis — inland
+    5:  (0.0, 1.0),   # Talabaan — SSA3
+    6:  (0.0, 0.2),   # Tangkalan — inland
+    7:  (0.0, 1.0),   # Tayamaan — SSA3
+    8:  (0.0, 1.0),   # Poblacion 1 — SSA3
+    9:  (0.0, 1.0),   # Poblacion 2 — SSA3
+    10: (0.0, 1.0),   # Poblacion 3 — SSA3
+    11: (0.0, 1.0),   # Poblacion 4 — SSA3
+    12: (0.0, 0.2),   # Poblacion 5 — inland
+    13: (0.0, 1.0),   # Poblacion 6 — SSA3
+    14: (0.0, 0.2),   # Poblacion 7 — inland
+    15: (0.0, 1.0),   # Poblacion 8 — SSA3
+}
+
 
 def normalize(value: float, min_val: float, max_val: float) -> float:
     """
@@ -67,14 +96,20 @@ def normalize(value: float, min_val: float, max_val: float) -> float:
 def get_indicator_bounds(indicator: str, barangay_id: int) -> tuple:
     """
     Returns correct (min, max) bounds for a given indicator and barangay.
-    Per-barangay bounds for rainfall and flood.
-    Global bounds for soil and report (universal scales).
+    Per-barangay bounds for rainfall, flood, humidity, and storm_surge.
+    Global bounds for soil (universal scale).
     """
     if indicator == "rainfall" and barangay_id in BARANGAY_RAINFALL_BOUNDS:
         return BARANGAY_RAINFALL_BOUNDS[barangay_id]
 
     if indicator == "flood" and barangay_id in BARANGAY_FLOOD_BOUNDS:
         return BARANGAY_FLOOD_BOUNDS[barangay_id]
+
+    if indicator == "humidity" and barangay_id in BARANGAY_HUMIDITY_BOUNDS:
+        return BARANGAY_HUMIDITY_BOUNDS[barangay_id]
+
+    if indicator == "storm_surge" and barangay_id in BARANGAY_STORM_SURGE_BOUNDS:
+        return BARANGAY_STORM_SURGE_BOUNDS[barangay_id]
 
     return INDICATOR_RANGES.get(indicator, (0.0, 1.0))
 
@@ -99,9 +134,11 @@ def compute_weighted_scores(
     barangay_id : Selects correct normalization bounds per barangay
     """
     raw_values = {
-        "rainfall": float(E.get("rainfall", 0)),
-        "soil":     float(E.get("soil", 0)),
-        "flood":    float(E.get("flood", 0)),
+        "rainfall":    float(E.get("rainfall", 0)),
+        "soil":        float(E.get("soil", 0)),
+        "flood":       float(E.get("flood", 0)),
+        "humidity":    float(E.get("humidity", 0)),     # NEW
+        "storm_surge": float(E.get("storm_surge", 0)),  # NEW
     }
 
     weighted_scores = []

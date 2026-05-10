@@ -26,48 +26,91 @@ _DEFAULT_FLOOD_SCORE = 0.0
 
 def lookup_flood_hazard(lat: float, lon: float) -> float:
     """
-    Query the barangays table in PostgreSQL to get flood hazard score
-    for the given coordinates using PostGIS spatial query.
+    Query PostGIS flood polygons and compute flood hazard score.
     """
+
     try:
         import psycopg2
+
         conn = psycopg2.connect(get_database_url())
         cur = conn.cursor()
 
-        # Primary: check if point is inside a polygon
+        # =====================================================
+        # CHECK 25-YEAR FLOOD
+        # =====================================================
+
         cur.execute("""
-            SELECT "Var"
-            FROM barangays
-            WHERE ST_Contains(geometry, ST_SetSRID(ST_MakePoint(%s, %s), 4326))
+            SELECT 1
+            FROM mindoro_flood
+            WHERE
+                flood_type = '25yr'
+                AND ST_Intersects(
+                    geometry,
+                    ST_SetSRID(
+                        ST_MakePoint(%s, %s),
+                        4326
+                    )
+                )
             LIMIT 1
         """, (lon, lat))
 
-        row = cur.fetchone()
+        if cur.fetchone():
+            cur.close()
+            conn.close()
 
-        # Fallback: find nearest polygon if point is outside all polygons
-        if not row:
-            cur.execute("""
-                SELECT "Var"
-                FROM barangays
-                ORDER BY geometry <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326)
-                LIMIT 1
-            """, (lon, lat))
-            row = cur.fetchone()
+            logger.info(
+                "Flood hazard HIGH: lat=%.5f lon=%.5f",
+                lat,
+                lon
+            )
+
+            return 1.0
+
+        # =====================================================
+        # CHECK 5-YEAR FLOOD
+        # =====================================================
+
+        cur.execute("""
+            SELECT 1
+            FROM mindoro_flood
+            WHERE
+                flood_type = '5yr'
+                AND ST_Intersects(
+                    geometry,
+                    ST_SetSRID(
+                        ST_MakePoint(%s, %s),
+                        4326
+                    )
+                )
+            LIMIT 1
+        """, (lon, lat))
+
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+
+            logger.info(
+                "Flood hazard MEDIUM: lat=%.5f lon=%.5f",
+                lat,
+                lon
+            )
+
+            return 0.6
 
         cur.close()
         conn.close()
 
-        if row:
-            var = float(row[0])
-            score = _HAZARD_MAP.get(var, _DEFAULT_FLOOD_SCORE)
-            logger.info("Flood hazard lookup: lat=%.5f lon=%.5f → Var=%.1f score=%.2f", lat, lon, var, score)
-            return score
+        logger.info(
+            "Flood hazard LOW: lat=%.5f lon=%.5f",
+            lat,
+            lon
+        )
 
-        return _DEFAULT_FLOOD_SCORE
+        return 0.2
 
     except Exception as e:
         logger.error("Flood hazard DB lookup error: %s", e)
-        return _DEFAULT_FLOOD_SCORE
+        return 0.0
 
 
 def enrich_E_with_shapefile(HR: dict, E: dict) -> None:

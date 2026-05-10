@@ -1,0 +1,1 @@
+{"timestamp": "2026-05-10T20:47:39.115872+00:00", "barangay_id": 1, "hazard": "Flood", "location": "Balansay", "rainfall": null, "humidity": null, "soil": null, "flood": null, "storm_surge": null, "rule_score": 0.1, "predicted": 1.6384, "final_risk": 1.0361, "risk_level": "LOW", "osm_is_fallback": null}

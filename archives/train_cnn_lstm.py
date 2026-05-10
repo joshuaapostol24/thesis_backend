@@ -1,38 +1,242 @@
-from __future__ import annotations
+from sqlalchemy import create_engine, text
 
-import argparse
-import logging
-import sys
-from pathlib import Path
+# =====================================================
+# SUPABASE CONNECTION
+# =====================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+DATABASE_URL = (
+    "postgresql://postgres.jpovamcznyzoemcnjrgs:"
+    "123Apostol%40Coco"
+    "@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
+)
 
-from modules.cnn_lstm import BARANGAY_IDS, retrain_barangay
+engine = create_engine(DATABASE_URL)
 
+# =====================================================
+# CREATE BARANGAY HAZARD PROFILE
+# =====================================================
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Train CNN+LSTM barangay risk models from Supabase Postgres data."
-    )
-    parser.add_argument(
-        "--barangay-id",
-        type=int,
-        choices=BARANGAY_IDS,
-        help="Train only one barangay model. Defaults to all barangays.",
-    )
-    return parser.parse_args()
+query = """
 
+DROP TABLE IF EXISTS barangay_hazard_profile;
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    args = parse_args()
+CREATE TABLE barangay_hazard_profile AS
 
-    barangay_ids = [args.barangay_id] if args.barangay_id else BARANGAY_IDS
-    for barangay_id in barangay_ids:
-        retrain_barangay(barangay_id, force=True)
+SELECT
+    b.barangay_id,
+    b.name AS barangay_name,
+    b.lat,
+    b.lon,
 
+    -- =====================================================
+    -- FLOOD HAZARD
+    -- =====================================================
 
-if __name__ == "__main__":
-    main()
+    CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM mindoro_flood f
+            WHERE
+                f.flood_type = '25yr'
+                AND ST_Intersects(
+                    f.geometry,
+                    ST_SetSRID(
+                        ST_Point(b.lon, b.lat),
+                        4326
+                    )
+                )
+        )
+        THEN 'High'
+
+        WHEN EXISTS (
+            SELECT 1
+            FROM mindoro_flood f
+            WHERE
+                f.flood_type = '5yr'
+                AND ST_Intersects(
+                    f.geometry,
+                    ST_SetSRID(
+                        ST_Point(b.lon, b.lat),
+                        4326
+                    )
+                )
+        )
+        THEN 'Medium'
+
+        ELSE 'Low'
+    END AS flood_hazard_level,
+
+    CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM mindoro_flood f
+            WHERE
+                f.flood_type = '25yr'
+                AND ST_Intersects(
+                    f.geometry,
+                    ST_SetSRID(
+                        ST_Point(b.lon, b.lat),
+                        4326
+                    )
+                )
+        )
+        THEN 1.0
+
+        WHEN EXISTS (
+            SELECT 1
+            FROM mindoro_flood f
+            WHERE
+                f.flood_type = '5yr'
+                AND ST_Intersects(
+                    f.geometry,
+                    ST_SetSRID(
+                        ST_Point(b.lon, b.lat),
+                        4326
+                    )
+                )
+        )
+        THEN 0.6
+
+        ELSE 0.2
+    END AS flood_hazard_score,
+
+    -- =====================================================
+    -- STORM SURGE FLAGS
+    -- =====================================================
+
+    EXISTS (
+        SELECT 1
+        FROM storm_surge_zones s
+        WHERE
+            s.surge_type = 'SSA1'
+            AND ST_Intersects(
+                s.geometry,
+                ST_SetSRID(
+                    ST_Point(b.lon, b.lat),
+                    4326
+                )
+            )
+    ) AS in_ssa1,
+
+    EXISTS (
+        SELECT 1
+        FROM storm_surge_zones s
+        WHERE
+            s.surge_type = 'SSA2'
+            AND ST_Intersects(
+                s.geometry,
+                ST_SetSRID(
+                    ST_Point(b.lon, b.lat),
+                    4326
+                )
+            )
+    ) AS in_ssa2,
+
+    EXISTS (
+        SELECT 1
+        FROM storm_surge_zones s
+        WHERE
+            s.surge_type = 'SSA3'
+            AND ST_Intersects(
+                s.geometry,
+                ST_SetSRID(
+                    ST_Point(b.lon, b.lat),
+                    4326
+                )
+            )
+    ) AS in_ssa3,
+
+    EXISTS (
+        SELECT 1
+        FROM storm_surge_zones s
+        WHERE
+            s.surge_type = 'SSA4'
+            AND ST_Intersects(
+                s.geometry,
+                ST_SetSRID(
+                    ST_Point(b.lon, b.lat),
+                    4326
+                )
+            )
+    ) AS in_ssa4,
+
+    -- =====================================================
+    -- STORM SURGE SCORE
+    -- =====================================================
+
+    CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM storm_surge_zones s
+            WHERE
+                s.surge_type = 'SSA4'
+                AND ST_Intersects(
+                    s.geometry,
+                    ST_SetSRID(
+                        ST_Point(b.lon, b.lat),
+                        4326
+                    )
+                )
+        )
+        THEN 1.0
+
+        WHEN EXISTS (
+            SELECT 1
+            FROM storm_surge_zones s
+            WHERE
+                s.surge_type = 'SSA3'
+                AND ST_Intersects(
+                    s.geometry,
+                    ST_SetSRID(
+                        ST_Point(b.lon, b.lat),
+                        4326
+                    )
+                )
+        )
+        THEN 0.8
+
+        WHEN EXISTS (
+            SELECT 1
+            FROM storm_surge_zones s
+            WHERE
+                s.surge_type = 'SSA2'
+                AND ST_Intersects(
+                    s.geometry,
+                    ST_SetSRID(
+                        ST_Point(b.lon, b.lat),
+                        4326
+                    )
+                )
+        )
+        THEN 0.5
+
+        WHEN EXISTS (
+            SELECT 1
+            FROM storm_surge_zones s
+            WHERE
+                s.surge_type = 'SSA1'
+                AND ST_Intersects(
+                    s.geometry,
+                    ST_SetSRID(
+                        ST_Point(b.lon, b.lat),
+                        4326
+                    )
+                )
+        )
+        THEN 0.3
+
+        ELSE 0.1
+    END AS storm_surge_score
+
+FROM barangay_list b;
+
+"""
+
+# =====================================================
+# EXECUTE QUERY
+# =====================================================
+
+with engine.begin() as conn:
+    conn.execute(text(query))
+
+print("barangay_hazard_profile created successfully!")

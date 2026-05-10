@@ -16,7 +16,6 @@ Architecture
 
 from __future__ import annotations
 
-import concurrent.futures
 import logging
 import os
 import threading
@@ -30,6 +29,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
+from modules.config import get_database_url
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -37,27 +38,21 @@ logger = logging.getLogger(__name__)
 POINT_FEATURES = ["rainfall", "humidity", "soil", "flood", "storm_surge"]
 
 INDICATOR_RANGES = {
-    "rainfall": (0.0, 50.0),
-    "humidity": (0.0, 100.0),
-    "soil": (0.0, 3.0),
-    "flood": (0.0, 4.0),
+    "rainfall":    (0.0, 50.0),
+    "humidity":    (0.0, 100.0),
+    "soil":        (0.0, 3.0),
+    "flood":       (0.0, 4.0),
     "storm_surge": (0.0, 5.0),
 }
 
 BARANGAY_IDS: List[int] = list(range(1, 16))   # 1 – 15
 
-_TRAIN_EPOCHS  = 50       # reduced from 200 for faster training
-_TRAIN_LR      = 1e-3
-_BATCH_SIZE    = 256      # increased from 64 for faster training
-_MAX_ROWS      = 730      # use last 2 years of data (faster, still accurate)
-SEQ_LEN        = 10
+_TRAIN_EPOCHS = 100   # Increased from 50 (longer sequences need more epochs)
+_TRAIN_LR     = 1e-3
+_BATCH_SIZE   = 128   # Reduced from 256 (90-day sequences use more GPU memory)
+_MAX_ROWS     = 730
+SEQ_LEN       = 90    # Increased from 10: Use full 90 days of historical data per requirement
 
-DATABASE_URL = (
-    "postgresql://postgres.jpovamcznyzoemcnjrgs:"
-    "123Apostol%40Coco"
-    "@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
-    "?sslmode=require"
-)
 # Paths
 _WEIGHTS_DIR = Path(os.environ.get("BARANGAY_WEIGHTS_DIR", "weights"))
 _WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -132,7 +127,7 @@ def load_barangay_data(barangay_id: int):
     """Load training data from PostgreSQL database."""
     import psycopg2
 
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(get_database_url())
     cur = conn.cursor()
 
     cur.execute("""
@@ -150,24 +145,16 @@ def load_barangay_data(barangay_id: int):
     if not rows:
         raise ValueError(f"No training data found for barangay_id={barangay_id}")
 
-    # Reverse so data is in chronological order
     rows = list(reversed(rows))
 
     df = pd.DataFrame(
-    rows,
-    columns=[
-        "rainfall",
-        "humidity",
-        "soil",
-        "flood",
-        "storm_surge",
-        "risk_label"
-    ]
+        rows,
+        columns=["rainfall", "humidity", "soil", "flood", "storm_surge", "risk_label"]
     )
 
-    df["r_n"] = df["rainfall"].apply(lambda v: _norm(v, "rainfall"))
-    df["s_n"] = df["soil"].apply(lambda v: _norm(v, "soil"))
-    df["f_n"] = df["flood"].apply(lambda v: _norm(v, "flood"))
+    df["r_n"]  = df["rainfall"].apply(lambda v: _norm(v, "rainfall"))
+    df["s_n"]  = df["soil"].apply(lambda v: _norm(v, "soil"))
+    df["f_n"]  = df["flood"].apply(lambda v: _norm(v, "flood"))
     df["h_n"]  = df["humidity"].apply(lambda v: _norm(v, "humidity"))
     df["ss_n"] = df["storm_surge"].apply(lambda v: _norm(v, "storm_surge"))
 
@@ -177,7 +164,7 @@ def load_barangay_data(barangay_id: int):
         window = df.iloc[i - SEQ_LEN:i]
         seq = window[["r_n", "h_n", "s_n", "f_n", "ss_n"]].values.tolist()
         row = df.iloc[i]
-        pt = [row["r_n"], row["h_n"],row["s_n"], row["f_n"],row["ss_n"]]
+        pt  = [row["r_n"], row["h_n"], row["s_n"], row["f_n"], row["ss_n"]]
         lbl = max(0.0, min(3.0, float(row["risk_label"])))
         points.append(pt)
         seqs.append(seq)
@@ -187,7 +174,7 @@ def load_barangay_data(barangay_id: int):
 
     return (
         torch.tensor(points, dtype=torch.float32),
-        torch.tensor(seqs, dtype=torch.float32),
+        torch.tensor(seqs,   dtype=torch.float32),
         torch.tensor(labels, dtype=torch.float32),
     )
 
@@ -219,8 +206,10 @@ def _train_model(barangay_id: int) -> CnnLstmRiskModel:
             optimizer.step()
             total += loss.item() * pb.size(0)
         if epoch % 10 == 0:
-            logger.info("  Barangay %02d | Epoch %d/%d — MSE %.6f",
-                        barangay_id, epoch, _TRAIN_EPOCHS, total / len(lbl_t))
+            logger.info(
+                "  Barangay %02d | Epoch %d/%d — MSE %.6f",
+                barangay_id, epoch, _TRAIN_EPOCHS, total / len(lbl_t)
+            )
 
     logger.info("Barangay %02d training complete.", barangay_id)
     return model
@@ -238,11 +227,12 @@ def _load_or_train_barangay(barangay_id: int) -> CnnLstmRiskModel:
 
     if wp.exists():
         try:
-            model.load_state_dict(
-              torch.load(wp, map_location="cpu"))
+            model.load_state_dict(torch.load(wp, map_location="cpu"))
             logger.info("Barangay %02d — weights loaded from '%s'.", barangay_id, wp)
         except Exception as exc:
-            logger.warning("Barangay %02d — could not load weights (%s). Retraining.", barangay_id, exc)
+            logger.warning(
+                "Barangay %02d — could not load weights (%s). Retraining.", barangay_id, exc
+            )
             model = _train_model(barangay_id)
             torch.save(model.state_dict(), wp)
     else:
@@ -268,32 +258,14 @@ def get_model(barangay_id: int) -> CnnLstmRiskModel:
 # ── Parallel preload at startup ────────────────────────────────────────────────
 
 def preload_all_models() -> None:
-    """
-    Load existing weights only.
-    Train only if weights do not exist.
-    """
-
+    """Load existing weights; train only if weights do not exist."""
     logger.info("Loading barangay models...")
-
     for bid in BARANGAY_IDS:
-
         try:
-
             get_model(bid)
-
-            logger.info(
-                "✅ Barangay %02d ready.",
-                bid
-            )
-
+            logger.info("✅ Barangay %02d ready.", bid)
         except Exception as e:
-
-            logger.error(
-                "❌ Barangay %02d failed: %s",
-                bid,
-                e
-            )
-
+            logger.error("❌ Barangay %02d failed: %s", bid, e)
     logger.info("All barangay models ready.")
 
 
@@ -307,7 +279,7 @@ def predict_risk(barangay_id: int, E: dict, H: dict) -> float:
 
     model = get_model(barangay_id)
 
-    pt  = torch.tensor([_extract_point(E)], dtype=torch.float32)
+    pt  = torch.tensor([_extract_point(E)],                      dtype=torch.float32)
     seq = torch.tensor([_build_seq(H, len(POINT_FEATURES))], dtype=torch.float32)
 
     with torch.no_grad():
@@ -317,8 +289,10 @@ def predict_risk(barangay_id: int, E: dict, H: dict) -> float:
     return score
 
 
-def predict_all_barangays(readings: Dict[int, dict],
-                          histories: Optional[Dict[int, dict]] = None) -> Dict[int, float]:
+def predict_all_barangays(
+    readings:  Dict[int, dict],
+    histories: Optional[Dict[int, dict]] = None
+) -> Dict[int, float]:
     if histories is None:
         histories = {}
     return {
@@ -327,8 +301,7 @@ def predict_all_barangays(readings: Dict[int, dict],
     }
 
 
-def retrain_barangay(barangay_id: int,
-                     force: bool = False) -> None:
+def retrain_barangay(barangay_id: int, force: bool = False) -> None:
     """Retrain the model for one barangay using latest DB data."""
     if force:
         with _registry_lock:

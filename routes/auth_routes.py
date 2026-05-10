@@ -1,57 +1,35 @@
-import os
 import datetime
+import os
+
 import jwt
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, EmailStr
 
-from fastapi import (
-    APIRouter,
-    HTTPException,
-    Depends
-)
-
-from fastapi.security import (
-    HTTPBearer,
-    HTTPAuthorizationCredentials
-)
-
-from pydantic import (
-    BaseModel,
-    EmailStr
-)
-
-from supabase import create_client
-
-from modules.database import (
-    get_connection
-)
+from modules.config import get_secret_key, get_supabase_url, get_supabase_key
+from modules.database import engine
 
 # =========================================================
 # ROUTER
 # =========================================================
 
-router = APIRouter(
-    prefix="/auth",
-    tags=["Authentication"]
-)
-
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
 
-SECRET_KEY = os.environ.get(
-    "SECRET_KEY",
-    "your-secret-key"
-)
 
-SUPABASE_URL = os.environ.get(
-    "SUPABASE_URL"
-)
+# =========================================================
+# SUPABASE CLIENT (lazy — avoids crash on import if env vars missing)
+# =========================================================
 
-SUPABASE_KEY = os.environ.get(
-    "SUPABASE_KEY"
-)
+_supabase_client = None
 
-supabase = create_client(
-    SUPABASE_URL,
-    SUPABASE_KEY
-)
+def _get_supabase():
+    global _supabase_client
+    if _supabase_client is None:
+        from supabase import create_client
+        _supabase_client = create_client(get_supabase_url(), get_supabase_key())
+    return _supabase_client
+
 
 # =========================================================
 # MODELS
@@ -82,48 +60,29 @@ class UserResponse(BaseModel):
 # JWT
 # =========================================================
 
-def create_token(email: str):
-
+def create_token(email: str) -> str:
     payload = {
         "sub": email,
-        "exp": datetime.datetime.utcnow()
-        + datetime.timedelta(days=7)
+        "exp": datetime.datetime.now(datetime.timezone.utc)
+               + datetime.timedelta(days=7),
     }
-
-    return jwt.encode(
-        payload,
-        SECRET_KEY,
-        algorithm="HS256"
-    )
+    return jwt.encode(payload, get_secret_key(), algorithm="HS256")
 
 
 def verify_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
     try:
-
         payload = jwt.decode(
             credentials.credentials,
-            SECRET_KEY,
-            algorithms=["HS256"]
+            get_secret_key(),
+            algorithms=["HS256"],
         )
-
         return payload["sub"]
-
     except jwt.ExpiredSignatureError:
-
-        raise HTTPException(
-            status_code=401,
-            detail="Token expired"
-        )
-
+        raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
-
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid token"
-        )
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 # =========================================================
@@ -131,133 +90,71 @@ def verify_token(
 # =========================================================
 
 def get_profile_by_email(email: str):
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("""
+                SELECT id, name, address, email, mobile_number
+                FROM users
+                WHERE email = :email
+            """),
+            {"email": email},
+        ).fetchone()
 
-    conn = get_connection()
-    cur = conn.cursor()
-
-    try:
-
-        cur.execute("""
-            SELECT
-                id,
-                name,
-                address,
-                email,
-                mobile_number
-            FROM users
-            WHERE email = %s
-        """, (email,))
-
-        row = cur.fetchone()
-
-        if not row:
-            return None
-
-        return {
-            "id": str(row[0]),
-            "name": row[1],
-            "address": row[2],
-            "email": row[3],
-            "mobile_number": row[4],
-        }
-
-    finally:
-        cur.close()
-        conn.close()
+    if not row:
+        return None
+    return {
+        "id":            str(row[0]),
+        "name":          row[1],
+        "address":       row[2],
+        "email":         row[3],
+        "mobile_number": row[4],
+    }
 
 
-def create_profile(
-    name: str,
-    address: str,
-    email: str,
-    mobile_number: str
-):
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    try:
-
-        cur.execute("""
-            INSERT INTO users (
-                name,
-                address,
-                email,
-                mobile_number
-            )
-            VALUES (%s, %s, %s, %s)
-        """, (
-            name,
-            address,
-            email,
-            mobile_number
-        ))
-
-        conn.commit()
-
-    finally:
-        cur.close()
-        conn.close()
+def create_profile(name: str, address: str, email: str, mobile_number: str) -> None:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO users (name, address, email, mobile_number)
+                VALUES (:name, :address, :email, :mobile_number)
+            """),
+            {
+                "name":          name,
+                "address":       address,
+                "email":         email,
+                "mobile_number": mobile_number,
+            },
+        )
 
 
 # =========================================================
 # SIGNUP
 # =========================================================
 
-@router.post(
-    "/signup",
-    response_model=UserResponse
-)
+@router.post("/signup", response_model=UserResponse)
 def signup(data: SignUpRequest):
+    if get_profile_by_email(data.email):
+        raise HTTPException(status_code=400, detail="Email already exists")
 
-    existing_user = get_profile_by_email(
-        data.email
-    )
-
-    if existing_user:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Email already exists"
-        )
-
-    # =====================================================
-    # CREATE AUTH ACCOUNT
-    # =====================================================
-
-    auth_response = supabase.auth.sign_up({
-        "email": data.email,
-        "password": data.password
+    auth_response = _get_supabase().auth.sign_up({
+        "email":    data.email,
+        "password": data.password,
     })
 
     if not auth_response.user:
+        raise HTTPException(status_code=400, detail="Signup failed")
 
-        raise HTTPException(
-            status_code=400,
-            detail="Signup failed"
-        )
-
-    # =====================================================
-    # CREATE PROFILE
-    # =====================================================
-
-    create_profile(
-        data.name,
-        data.address,
-        data.email,
-        data.mobile_number
-    )
-
-    token = create_token(
-        data.email
-    )
+    create_profile(data.name, data.address, data.email, data.mobile_number)
+    token = create_token(data.email)
 
     return UserResponse(
         name=data.name,
         address=data.address,
         email=data.email,
         mobile_number=data.mobile_number,
-        token=token
+        token=token,
     )
 
 
@@ -265,45 +162,28 @@ def signup(data: SignUpRequest):
 # LOGIN
 # =========================================================
 
-@router.post(
-    "/login",
-    response_model=UserResponse
-)
+@router.post("/login", response_model=UserResponse)
 def login(data: LoginRequest):
-
-    auth_response = supabase.auth.sign_in_with_password({
-        "email": data.email,
-        "password": data.password
+    auth_response = _get_supabase().auth.sign_in_with_password({
+        "email":    data.email,
+        "password": data.password,
     })
 
     if not auth_response.user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
-        )
-
-    user = get_profile_by_email(
-        data.email
-    )
-
+    user = get_profile_by_email(data.email)
     if not user:
+        raise HTTPException(status_code=404, detail="Profile not found")
 
-        raise HTTPException(
-            status_code=404,
-            detail="Profile not found"
-        )
-
-    token = create_token(
-        data.email
-    )
+    token = create_token(data.email)
 
     return UserResponse(
         name=user["name"],
         address=user["address"],
         email=user["email"],
         mobile_number=user["mobile_number"],
-        token=token
+        token=token,
     )
 
 
@@ -312,19 +192,8 @@ def login(data: LoginRequest):
 # =========================================================
 
 @router.get("/me")
-def get_me(
-    email: str = Depends(verify_token)
-):
-
-    user = get_profile_by_email(
-        email
-    )
-
+def get_me(email: str = Depends(verify_token)):
+    user = get_profile_by_email(email)
     if not user:
-
-        raise HTTPException(
-            status_code=404,
-            detail="User not found"
-        )
-
+        raise HTTPException(status_code=404, detail="User not found")
     return user

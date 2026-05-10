@@ -9,14 +9,17 @@ DEFAULT_RULES = [
     {"priority": 3, "threshold": 0.0, "action": "LOW"},
 ]
 
-# ── Base weights from Table 4 of your paper ───────────────────────────────────
+# ── Updated base weights (now 5 indicators) ──────────────────────────────────
+# Includes new indicators: humidity, storm_surge
 BASE_WEIGHTS = {
-    "rainfall": 0.40,
-    "soil":     0.30,
-    "flood":    0.20,
+    "rainfall":    0.35,   # Reduced from 0.40 (now includes humidity signal)
+    "soil":        0.25,   # Reduced from 0.30
+    "flood":       0.20,
+    "humidity":    0.10,   # NEW: Saturation indicator (> 85% RH = warning)
+    "storm_surge": 0.10,   # NEW: Coastal hazard (coastal barangays)
 }
 
-INDICATOR_SET = ["rainfall", "soil", "flood"]
+INDICATOR_SET = ["rainfall", "soil", "flood", "humidity", "storm_surge"]
 
 # ── Per-barangay hazard profiles (from barangay_hazard_profile.csv) ───────────
 # These are the actual values from your shapefiles — not survey means
@@ -45,20 +48,25 @@ def compute_barangay_weights(barangay_id: int, hazard_profile: dict = None) -> d
     hazard profile — this is the B (Barangay Context) parameter
     described in Algorithm 3 of the paper.
 
+    Updated to include humidity and storm_surge indicators.
+
     Weight logic per overall hazard level:
 
     HIGH   (Tayamaan, Poblacion 8)
-           → Flood-prone weight increased to 0.40
+           → Flood-prone weight increased to 0.35
+           → Storm surge significant (SSA3) → 0.22
            → Rainfall reduced since flood exposure is already structural
            → These barangays have BOTH medium flood AND SSA3 storm surge
 
     LOW    (San Luis, Tangkalan)
-           → Rainfall weight increased to 0.50
+           → Rainfall weight increased to 0.40
+           → Humidity elevated (pre-saturation signal) → 0.15
            → Flood reduced since structural exposure is minimal
            → Rainfall is the primary early warning signal here
 
     MODERATE (all Poblacion 1-7, Balansay, Fatima, Payompon, Talabaan)
-           → Use base Table 4 weights
+           → Coastal moderate: elevated storm surge (0.18)
+           → Inland moderate: use base Table 4 weights
            → Balanced exposure — no dominant single factor
     """
     # Get profile from built-in dict or from passed hazard_profile
@@ -68,31 +76,48 @@ def compute_barangay_weights(barangay_id: int, hazard_profile: dict = None) -> d
 
     if overall == "HIGH":
         if ssa_level == 3:
-            # HIGH flood + SSA3 storm surge — flood is dominant structural risk
+            # HIGH flood + SSA3 storm surge — both are dominant structural risks
             weights = {
-                "rainfall": 0.22,
-                "soil":     0.28,
-                "flood":    0.40,
+                "rainfall":    0.15,   # Reduced: already exposed
+                "soil":        0.20,
+                "flood":       0.35,   # Primary risk factor
+                "humidity":    0.08,   # Low: not primary indicator
+                "storm_surge": 0.22,   # Significant coastal risk
             }
         else:
-            # HIGH flood only — no storm surge
+            # HIGH flood only (unlikely in study area)
             weights = {
-                "rainfall": 0.25,
-                "soil":     0.30,
-                "flood":    0.35,
+                "rainfall":    0.20,
+                "soil":        0.25,
+                "flood":       0.35,
+                "humidity":    0.10,
+                "storm_surge": 0.10,
             }
 
     elif overall == "LOW":
-        # Minimal structural hazard — rainfall is the early warning signal
+        # Minimal structural hazard — rainfall + humidity are early warnings
         weights = {
-            "rainfall": 0.50,
-            "soil":     0.28,
-            "flood":    0.12,
+            "rainfall":    0.40,   # Primary indicator
+            "soil":        0.25,
+            "flood":       0.10,   # Minimal exposure
+            "humidity":    0.15,   # Pre-saturation indicator
+            "storm_surge": 0.10,
         }
 
-    else:
-        # MODERATE — use Table 4 base weights
-        weights = BASE_WEIGHTS.copy()
+    else:  # MODERATE
+        # Differentiate coastal vs inland MODERATE barangays
+        if ssa_level == 3:
+            # Coastal moderate: elevated storm surge weighting
+            weights = {
+                "rainfall":    0.32,
+                "soil":        0.23,
+                "flood":       0.18,
+                "humidity":    0.09,
+                "storm_surge": 0.18,   # Elevated for coastal exposure
+            }
+        else:
+            # Inland moderate: use base weights (shouldn't occur in study area)
+            weights = BASE_WEIGHTS.copy()
 
     # Always normalize so weights sum exactly to 1.0
     total = sum(weights.values())
