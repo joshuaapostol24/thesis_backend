@@ -9,6 +9,7 @@ from modules.cnn_lstm import preload_all_models
 from routes.barangay_routes import router as barangay_router
 from routes.prediction_routes import router as prediction_router
 from routes.simulation_routes import router as simulation_router
+from routes.sms_routes import router as sms_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -89,10 +90,10 @@ def health():
 # =========================================================
 
 app.include_router(barangay_router)
-app.include_router(news_router)
 app.include_router(prediction_router)
 app.include_router(simulation_router)
-
+app.include_router(news_router)
+app.include_router(sms_router)
 
 # =========================================================
 # LOGIN
