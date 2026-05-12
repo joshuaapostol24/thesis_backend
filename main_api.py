@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from routes.news_routes import router as news_router
 from modules.cnn_lstm import preload_all_models
 from routes.barangay_routes import router as barangay_router
 from routes.prediction_routes import router as prediction_router
@@ -89,8 +89,10 @@ def health():
 # =========================================================
 
 app.include_router(barangay_router)
+app.include_router(news_router)
 app.include_router(prediction_router)
 app.include_router(simulation_router)
+
 
 # =========================================================
 # LOGIN
