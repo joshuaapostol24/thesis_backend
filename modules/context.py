@@ -4,9 +4,11 @@ logger = logging.getLogger(__name__)
 
 # ── Rules (same for all barangays) ────────────────────────────────────────────
 DEFAULT_RULES = [
-    {"priority": 1, "threshold": 2.5, "action": "HIGH"},
-    {"priority": 2, "threshold": 1.5, "action": "MODERATE"},
-    {"priority": 3, "threshold": 0.0, "action": "LOW"},
+    {"priority": 1, "threshold": 2.7, "action": "VERY HIGH"},
+    {"priority": 2, "threshold": 2.1, "action": "HIGH"},
+    {"priority": 3, "threshold": 1.2, "action": "MODERATE"},
+    {"priority": 4, "threshold": 0.5, "action": "LOW"},
+    {"priority": 5, "threshold": 0.0, "action": "VERY LOW"},
 ]
 
 # ── Updated base weights (now 5 indicators) ──────────────────────────────────
