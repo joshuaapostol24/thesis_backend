@@ -91,3 +91,31 @@ def health():
 app.include_router(barangay_router)
 app.include_router(prediction_router)
 app.include_router(simulation_router)
+
+# =========================================================
+# LOGIN
+# =========================================================
+
+from pydantic import BaseModel
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/login")
+def login(data: LoginRequest):
+    if (
+        data.email == "admin@resq.com"
+        and
+        data.password == "admin123"
+    ):
+        return {
+            "success": True,
+            "name": "Administrator",
+            "email": "admin@resq.com",
+        }
+
+    return {
+        "success": False,
+        "message": "Invalid email or password"
+    }
