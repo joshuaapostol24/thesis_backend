@@ -1,15 +1,34 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+
+def _find_dotenv_file() -> Path | None:
+    candidates = [
+        Path.cwd(),
+        Path(__file__).resolve().parent,
+        Path(__file__).resolve().parent.parent,
+        Path(__file__).resolve().parent.parent.parent,
+    ]
+    for base in candidates:
+        env_path = base / ".env"
+        if env_path.is_file():
+            return env_path
+    return None
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    dotenv_path = _find_dotenv_file()
+    if dotenv_path is not None:
+        load_dotenv(dotenv_path=dotenv_path)
+    else:
+        load_dotenv()
 except ModuleNotFoundError:
     # Manual .env parsing fallback (no python-dotenv installed)
-    env_path = os.path.join(os.getcwd(), ".env")
-    if os.path.exists(env_path):
-        with open(env_path, encoding="utf-8") as env_file:
+    dotenv_path = _find_dotenv_file()
+    if dotenv_path is not None:
+        with open(dotenv_path, encoding="utf-8") as env_file:
             for line in env_file:
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:

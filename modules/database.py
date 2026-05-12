@@ -58,19 +58,23 @@ def list_barangay_profiles() -> list:
         """)).fetchall()
 
     return [
-        {
-            "barangay_id":       row[0],
-            "name":              row[1],
-            "lat":               float(row[2]) if row[2] is not None else 0.0,
-            "lon":               float(row[3]) if row[3] is not None else 0.0,
-            "flood_hazard_level": row[4] or "Low",
-            "flood_hazard_score": float(row[5]) if row[5] is not None else 0.0,
-            "max_ssa_level":     int(row[6]) if row[6] is not None else 0,
-            "storm_surge_score": float(row[7]) if row[7] is not None else 0.0,
-            "overall_hazard":    row[8] or "LOW",
-        }
-        for row in rows
-    ]
+    {
+        "barangay_id":        row[0],
+        "name":               row[1],
+        "lat":                float(row[2]) if row[2] is not None else 0.0,
+        "lon":                float(row[3]) if row[3] is not None else 0.0,
+        "flood_hazard_level": row[4] or "Low",
+        "flood_hazard_score": float(row[5]) if row[5] is not None else 0.0,
+        "max_ssa_level":      int(row[6]) if row[6] is not None else 0,
+        "storm_surge_score":  float(row[7]) if row[7] is not None else 0.0,
+        "overall_hazard":     row[8] or "LOW",
+        # ── aliases for context.py ────────────────────────────────────────
+        "overall":            row[8] or "LOW",
+        "ssa_level":          int(row[6]) if row[6] is not None else 0,
+        "flood_score":        float(row[5]) if row[5] is not None else 0.0,
+    }
+    for row in rows
+]
 
 
 # ── Barangay list ─────────────────────────────────────────────────────────────
