@@ -167,7 +167,7 @@ def signup(data: SignUpRequest):
 def login(data: LoginRequest):
 
     if (
-        data.email == "admin"
+        data.email == "admin@resq.com"
         and
         data.password == "admin123"
     ):
@@ -178,9 +178,9 @@ def login(data: LoginRequest):
 
             address="Mamburao",
 
-            email="admin",
+            email="admin@resq.com",
 
-            mobile_number="09123456789",
+            mobile_number="09976857742",
 
             token="admin-token"
 
