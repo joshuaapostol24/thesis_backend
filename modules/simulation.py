@@ -50,23 +50,22 @@ logger = logging.getLogger(__name__)
 # Mirrors weather_api._BARANGAY_PROFILES exactly.
 # flood / storm_surge are on the raw CNN+LSTM DB scale (0–4 / 0–5).
 _BARANGAY_PROFILES: Dict[int, dict] = {
-    1:  {"name": "Balansay",    "soil": 2.07, "flood": 1.8, "storm_surge": 4.2},
-    2:  {"name": "Fatima",      "soil": 2.03, "flood": 1.8, "storm_surge": 4.2},
-    3:  {"name": "Payompon",    "soil": 2.10, "flood": 1.8, "storm_surge": 4.2},
-    4:  {"name": "San Luis",    "soil": 2.22, "flood": 1.8, "storm_surge": 1.0},
-    5:  {"name": "Talabaan",    "soil": 2.20, "flood": 1.8, "storm_surge": 4.2},
-    6:  {"name": "Tangkalan",   "soil": 2.18, "flood": 3.2, "storm_surge": 1.0},
-    7:  {"name": "Tayamaan",    "soil": 2.17, "flood": 3.2, "storm_surge": 4.2},
-    8:  {"name": "Poblacion 1", "soil": 2.14, "flood": 1.8, "storm_surge": 4.2},
-    9:  {"name": "Poblacion 2", "soil": 2.12, "flood": 1.8, "storm_surge": 4.2},
-    10: {"name": "Poblacion 3", "soil": 2.09, "flood": 1.8, "storm_surge": 4.2},
-    11: {"name": "Poblacion 4", "soil": 2.72, "flood": 1.8, "storm_surge": 4.2},
-    12: {"name": "Poblacion 5", "soil": 1.96, "flood": 1.8, "storm_surge": 1.0},
-    13: {"name": "Poblacion 6", "soil": 2.01, "flood": 1.8, "storm_surge": 4.2},
-    14: {"name": "Poblacion 7", "soil": 2.47, "flood": 3.2, "storm_surge": 1.0},
-    15: {"name": "Poblacion 8", "soil": 2.67, "flood": 3.2, "storm_surge": 4.2},
+    1:  {"name": "Balansay",   "soil": 2.07, "flood": 1.8, "storm_surge": 4.2},
+    2:  {"name": "Fatima",     "soil": 2.03, "flood": 1.8, "storm_surge": 4.2},
+    3:  {"name": "Payompon",   "soil": 2.10, "flood": 1.8, "storm_surge": 4.2},
+    4:  {"name": "San Luis",   "soil": 2.22, "flood": 1.8, "storm_surge": 1.0},
+    5:  {"name": "Talabaan",   "soil": 2.20, "flood": 1.8, "storm_surge": 4.2},
+    6:  {"name": "Tangkalan",  "soil": 2.18, "flood": 3.2, "storm_surge": 1.0},
+    7:  {"name": "Tayamaan",   "soil": 2.17, "flood": 3.2, "storm_surge": 4.2},
+    8:  {"name": "Poblacion 1","soil": 2.14, "flood": 1.8, "storm_surge": 4.2},
+    9:  {"name": "Poblacion 2","soil": 2.12, "flood": 1.8, "storm_surge": 4.2},
+    10: {"name": "Poblacion 3","soil": 2.09, "flood": 1.8, "storm_surge": 4.2},
+    11: {"name": "Poblacion 4","soil": 2.72, "flood": 1.8, "storm_surge": 4.2},
+    12: {"name": "Poblacion 5","soil": 1.96, "flood": 1.8, "storm_surge": 1.0},
+    13: {"name": "Poblacion 6","soil": 2.01, "flood": 1.8, "storm_surge": 4.2},
+    14: {"name": "Poblacion 7","soil": 2.47, "flood": 3.2, "storm_surge": 1.0},
+    15: {"name": "Poblacion 8","soil": 2.67, "flood": 3.2, "storm_surge": 4.2},
 }
-
 # flood_hazard_score on the 0–1 rule-engine scale
 # matches barangay_hazard_profile.flood_hazard_score
 _FLOOD_HAZARD_SCORE: Dict[int, float] = {
@@ -143,7 +142,7 @@ class SimulationResult:
                     "rule_score":    round(b.rule_score,  4),
                     "ml_score":      round(b.ml_score,    4),
                     "weights":       b.weights,
-                    "breakdown":     {k: round(v, 4) for k, v in b.breakdown.items()},
+                    "breakdown": b.breakdown,
                 }
                 for b in sorted_b
             ],
