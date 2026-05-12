@@ -1,4 +1,6 @@
 import logging
+import requests
+import os
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -139,7 +141,16 @@ def predict(req: PredictRequest):
             barangay_id=req.barangay_id,
             hazard_profile=hazard_profile
         )
-        risk_level = apply_rules(rules, final_risk)
+
+        # Real-time rainfall gating
+        if rainfall < 2:
+            logger.info(
+                    "Low rainfall detected (%.2f mm) — reducing flood risk.",
+                    rainfall
+            )
+            final_risk *= 0.4
+
+            risk_level = apply_rules(rules, final_risk)
 
         # ── 6. Persist assessment ─────────────────────────────────────────────
         # FIX: pass soil explicitly so it is never NULL in risk_assessments
