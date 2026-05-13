@@ -29,7 +29,7 @@ class BulkSMSRequest(BaseModel):
 @router.post("/test")
 def send_test_sms(data: TestSMS):
     response = requests.post(
-        "   ",
+        "https://www.iprogsms.com/api/v1/sms_messages",
         params={
             "api_token": os.getenv("IPROGSMS_API_TOKEN"),
             "message": data.message,
