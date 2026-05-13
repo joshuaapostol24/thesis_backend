@@ -9,7 +9,7 @@ from psycopg2.extras import RealDictCursor
 
 from modules.cnn_lstm import preload_all_models
 from modules.database import get_connection
-
+from routes.user_routes import router as user_router
 from routes.barangay_routes import router as barangay_router
 from routes.news_routes import router as news_router
 from routes.prediction_routes import router as prediction_router
@@ -137,6 +137,7 @@ app.include_router(prediction_router)
 app.include_router(simulation_router)
 app.include_router(news_router)
 app.include_router(sms_router)
+app.include_router(user_router)
 
 
 # =========================================================
