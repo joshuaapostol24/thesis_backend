@@ -73,8 +73,20 @@ def notify_users_of_news(news_item: dict):
 @router.get("/all")
 def get_all_news():
     collection = _get_collection()
-    news = list(collection.find({}, {"_id": 0}))
+    news = list(collection.find({}))  # remove the _id: 0 exclusion
+    for item in news:
+        item["id"] = str(item["_id"])  # map _id to id string
+        del item["_id"]                # remove the ObjectId (not JSON serializable)
     return news
+
+@router.delete("/delete/{id}")
+def delete_news(id: str):
+    from bson import ObjectId
+    collection = _get_collection()
+    result = collection.delete_one({"_id": ObjectId(id)})
+    if result.deleted_count == 0:
+        return {"success": False, "message": "News not found"}
+    return {"success": True, "message": "News deleted successfully"}
 
 @router.get("/public")
 def get_public_news():
