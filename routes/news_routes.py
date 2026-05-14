@@ -46,7 +46,7 @@ def notify_users_of_news(news_item: dict):
         service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
         
         response = httpx.post(
-            "https://jpovamcznyzoemcnjrgs.supabase.co/functions/v1/send-news-notification",
+            "https://jpovamcznyzoemcnjrgs.supabase.co/functions/v1/send-news-push",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {service_role_key}",
