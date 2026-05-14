@@ -56,6 +56,8 @@ def notify_users_of_news(news_item: dict):
                 "message": news_item.get("message"),
                 "category": news_item.get("category"),
                 "priority": news_item.get("priority"),
+                "date": news_item.get("date"),
+                "audience": news_item.get("audience"),
             },
             timeout=10.0
         )
@@ -89,5 +91,6 @@ def create_news(data: NewsCreate):
 
     # Send push notification
     notify_users_of_news(news_item)
+
 
     return {"success": True, "message": "Announcement published successfully"}
