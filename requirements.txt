@@ -17,3 +17,4 @@ email-validator
 pymongo
 requests
 python-dotenv
+httpx
