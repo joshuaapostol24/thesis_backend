@@ -10,7 +10,14 @@ logger = logging.getLogger(__name__)
 # Raises RuntimeError on startup if env vars are missing — intentional.
 DATABASE_URL = get_database_url()
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_size=10,
+    max_overflow=20,
+    future=True,
+)
 
 # ── Hazard profile cache (loaded at app startup) ───────────────────────────
 _hazard_cache: dict = {}
@@ -37,44 +44,104 @@ def get_connection():
 
 
 def list_barangay_profiles() -> list:
-    """Return barangay rows with their hazard profile."""
+    """
+    Returns barangay records with synchronized
+    GIS hazard profile data.
+
+    Used for:
+        - context loading
+        - adaptive weighting
+        - frontend mapping
+        - hazard cache initialization
+    """
+
+    from sqlalchemy import text
+
     with engine.connect() as conn:
-        from sqlalchemy import text
+
         rows = conn.execute(text("""
             SELECT
                 b.barangay_id,
                 b.name,
                 b.lat,
                 b.lon,
+
                 h.flood_hazard_level,
                 h.flood_hazard_score,
+
                 h.max_ssa_level,
                 h.storm_surge_score,
+
                 h.overall_hazard
+
             FROM barangay_list b
+
             LEFT JOIN barangay_hazard_profile h
                 ON b.barangay_id = h.barangay_id
+
             ORDER BY b.barangay_id
         """)).fetchall()
 
-    return [
-    {
-        "barangay_id":        row[0],
-        "name":               row[1],
-        "lat":                float(row[2]) if row[2] is not None else 0.0,
-        "lon":                float(row[3]) if row[3] is not None else 0.0,
-        "flood_hazard_level": row[4] or "Low",
-        "flood_hazard_score": float(row[5]) if row[5] is not None else 0.0,
-        "max_ssa_level":      int(row[6]) if row[6] is not None else 0,
-        "storm_surge_score":  float(row[7]) if row[7] is not None else 0.0,
-        "overall_hazard":     row[8] or "LOW",
-        # ── aliases for context.py ────────────────────────────────────────
-        "overall":            row[8] or "LOW",
-        "ssa_level":          int(row[6]) if row[6] is not None else 0,
-        "flood_score":        float(row[5]) if row[5] is not None else 0.0,
-    }
-    for row in rows
-]
+    profiles = []
+
+    for row in rows:
+
+        profile = {
+
+            # ── Basic barangay data ────────────────────────────────
+
+            "barangay_id":
+                int(row[0]),
+
+            "name":
+                row[1],
+
+            "lat":
+                float(row[2])
+                if row[2] is not None
+                else 0.0,
+
+            "lon":
+                float(row[3])
+                if row[3] is not None
+                else 0.0,
+
+            # ── Flood hazard ───────────────────────────────────────
+
+            "flood_hazard_level":
+                row[4] or "Low",
+
+            "flood_hazard_score":
+                float(row[5])
+                if row[5] is not None
+                else 0.20,
+
+            # ── Storm surge ────────────────────────────────────────
+
+            "max_ssa_level":
+                int(row[6])
+                if row[6] is not None
+                else 0,
+
+            "storm_surge_score":
+                float(row[7])
+                if row[7] is not None
+                else 0.0,
+
+            # ── Overall GIS hazard classification ──────────────────
+
+            "overall_hazard":
+                row[8] or "LOW",
+        }
+
+        profiles.append(profile)
+
+    logger.debug(
+        "Loaded %d barangay profiles.",
+        len(profiles)
+    )
+
+    return profiles
 
 
 # ── Barangay list ─────────────────────────────────────────────────────────────
@@ -205,61 +272,109 @@ def get_barangay_features(barangay_id: int) -> dict:
     }
 
 
-def get_recent_weather(barangay_id: int, limit: int = 10) -> list:
+def get_recent_weather(
+    barangay_id: int,
+    limit: int = 90
+) -> list:
     """
-    Returns recent weather observations for a **specific barangay**.
-    
-    Uses barangay_id to retrieve spatially-aware weather sequence.
-    Falls back to "Mamburao" city data if no barangay-specific records.
+    Returns historical environmental sequences
+    for CNN-LSTM temporal prediction.
+
+    IMPORTANT:
+    Must match POINT_FEATURES in cnn_lstm.py
+
+    Returned features:
+        rainfall
+        humidity
+        soil
+        flood
+        storm_surge
     """
+
     from sqlalchemy import text
+
     try:
+
+        profile = get_barangay_hazard_profile(
+            barangay_id
+        )
+
+        flood_score = float(
+            profile.get(
+                "flood_score",
+                0.20
+            )
+        )
+
+        storm_surge_score = float(
+            profile.get(
+                "storm_surge_score",
+                0.0
+            )
+        )
+
         with engine.connect() as conn:
-            # Try to fetch barangay-specific weather first
+
             rows = conn.execute(text("""
-                SELECT timestamp, temperature, pressure, humidity,
-                       wind_speed, rainfall, rainfall_category,
-                       season, risk_level
-                FROM weather_data
+                SELECT
+                    timestamp,
+                    rainfall,
+                    humidity,
+                    soil
+                FROM barangay_training_data
                 WHERE barangay_id = :barangay_id
                 ORDER BY timestamp DESC
                 LIMIT :limit
-            """), {"barangay_id": barangay_id, "limit": limit}).fetchall()
-            
-            # Fallback to city-wide data if no barangay-specific records
-            if not rows:
-                logger.debug(
-                    "No barangay-specific weather for %d. Falling back to city data.",
-                    barangay_id
-                )
-                rows = conn.execute(text("""
-                    SELECT timestamp, temperature, pressure, humidity,
-                           wind_speed, rainfall, rainfall_category,
-                           season, risk_level
-                    FROM weather_data
-                    WHERE city = 'Mamburao' AND barangay_id IS NULL
-                    ORDER BY timestamp DESC
-                    LIMIT :limit
-                """), {"limit": limit}).fetchall()
+            """), {
+                "barangay_id": barangay_id,
+                "limit": limit
+            }).fetchall()
 
-        return [
-            {
-                "timestamp":         str(row[0]),
-                "temperature":       float(row[1]) if row[1] else 0.0,
-                "pressure":          float(row[2]) if row[2] else 0.0,
-                "humidity":          float(row[3]) if row[3] else 0.0,
-                "wind_speed":        float(row[4]) if row[4] else 0.0,
-                "rainfall":          float(row[5]) if row[5] else 0.0,
-                "rainfall_category": row[6] if row[6] else "None",
-                "season":            row[7] if row[7] else "Unknown",
-                "risk_level":        row[8] if row[8] else "LOW",
-            }
-            for row in rows
-        ]
-    except Exception as e:
-        logger.error("get_recent_weather error for barangay_id=%d: %s", barangay_id, e)
+        history = []
+
+        for row in rows:
+
+            history.append({
+
+                "timestamp":
+                    str(row[0]),
+
+                "rainfall":
+                    float(row[1] or 0.0),
+
+                "humidity":
+                    float(row[2] or 0.0),
+
+                "soil":
+                    float(row[3] or 0.0),
+
+                # Structural hazards are static
+                "flood":
+                    flood_score,
+
+                "storm_surge":
+                    storm_surge_score,
+            })
+
+        logger.debug(
+            "Loaded %d historical records "
+            "for barangay %d",
+            len(history),
+            barangay_id
+        )
+
+        return history
+
+    except Exception as exc:
+
+        logger.error(
+            "get_recent_weather error "
+            "for barangay_id=%d: %s",
+            barangay_id,
+            exc
+        )
+
         return []
-
 
 # ── Spatial lookups ───────────────────────────────────────────────────────────
 

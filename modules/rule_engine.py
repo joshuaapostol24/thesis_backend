@@ -2,55 +2,126 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ── Risk score limits ────────────────────────────────────────────────────────
 
-def compute_risk_score(weighted_scores: list) -> float:
-    """Sums all weighted indicator scores into a single rule-based score."""
-    score = sum(weighted_scores)
-    logger.debug("Rule-based risk score: %.4f", score)
+MIN_RISK_SCORE = 0.0
+MAX_RULE_SCORE = 1.0
+MAX_FINAL_RISK = 3.0
+
+
+def compute_risk_score(
+    weighted_scores: list
+) -> float:
+    """
+    Computes final rule-engine score by summing all
+    normalized weighted indicators.
+
+    Expected range:
+        0.0 → 1.0
+
+    Notes
+    -----
+    Scores above 1.0 indicate:
+        - invalid indicator normalization
+        - weights not summing to 1.0
+        - upstream logic inconsistency
+    """
+
+    score = float(sum(weighted_scores))
+
+    if score < MIN_RISK_SCORE:
+
+        logger.warning(
+            "Rule score below %.1f: %.4f",
+            MIN_RISK_SCORE,
+            score
+        )
+
+        score = MIN_RISK_SCORE
+
+    if score > MAX_RULE_SCORE:
+
+        logger.warning(
+            "Rule score exceeded %.1f: %.4f. "
+            "Check normalization or weights.",
+            MAX_RULE_SCORE,
+            score
+        )
+
+    logger.debug(
+        "Computed rule-engine score: %.4f",
+        score
+    )
+
     return score
 
 
-def apply_rules(rule_set: list, final_risk: float) -> str:
+def apply_rules(
+    rule_set: list,
+    final_risk: float
+) -> str:
     """
-    Matches the final risk score against the rule set and returns the
-    corresponding action string (e.g. 'LOW', 'MODERATE', 'HIGH').
+    Applies ordered fuzzy-rule thresholds
+    to classify final fused risk.
 
-    Rules must have 'threshold' and 'action' keys and must be sorted by
-    threshold descending (load_context() guarantees this).  The function
-    iterates from highest to lowest threshold and returns the action for
-    the first rule whose threshold is met.
+    Parameters
+    ----------
+    rule_set : list
+        Ordered threshold rules from context.py
 
-    Exhaustion invariant
-    ────────────────────
-    The rule set loaded from context.py always includes a catch-all rule
-    with threshold=0.0.  Because final_risk is a sum of non-negative
-    weighted normalised values — and therefore always >= 0.0 — this rule
-    will always match before the loop can exhaust.  The loop should never
-    reach the end.
+    final_risk : float
+        Final fused risk score (0–3)
 
-    The assertion below makes this invariant explicit and loud.  If it
-    ever fires it means either:
-      (a) the rule set was modified and the 0.0 catch-all was removed, or
-      (b) final_risk is somehow negative (a bug upstream in normalization
-          or fusion that should be surfaced immediately, not silently
-          defaulted away).
-
-    Both cases are programming errors, not runtime conditions, so an
-    AssertionError is the right response — a silent default would mask
-    the root cause.
+    Returns
+    -------
+    str
+        Risk classification label.
     """
+
+    # ── Safety clamp ────────────────────────────────────────────────
+
+    final_risk = max(
+        MIN_RISK_SCORE,
+        min(
+            MAX_FINAL_RISK,
+            final_risk
+        )
+    )
+
+    # ── Rule matching ───────────────────────────────────────────────
+
     for rule in rule_set:
-        if final_risk >= rule["threshold"]:
-            logger.info(
-                "Rule matched: score=%.4f >= threshold=%.2f → %s",
-                final_risk, rule["threshold"], rule["action"],
-            )
-            return rule["action"]
 
-    # This line is unreachable given a well-formed rule set and non-negative
-    # final_risk.  If it is ever reached, something has gone wrong upstream.
+        threshold = float(
+            rule.get("threshold", 0.0)
+        )
+
+        action = rule.get(
+            "action",
+            "UNKNOWN"
+        )
+
+        if final_risk >= threshold:
+
+            logger.info(
+                "Rule matched | "
+                "score=%.4f >= %.2f → %s",
+                final_risk,
+                threshold,
+                action
+            )
+
+            return action
+
+    # ── Should never happen ─────────────────────────────────────────
+
+    logger.error(
+        "Rule engine exhausted all rules | "
+        "final_risk=%.4f | rules=%s",
+        final_risk,
+        rule_set
+    )
+
     raise AssertionError(
-        f"apply_rules() exhausted all rules for final_risk={final_risk:.4f}. "
-        f"Rule set is missing a 0.0 catch-all, or final_risk is negative. "
-        f"Rule set: {rule_set}"
+        "Rule engine failed to classify risk score."
     )

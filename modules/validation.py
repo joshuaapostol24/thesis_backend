@@ -2,59 +2,128 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ── Required report fields ───────────────────────────────────────────────────
 
-def validate_report(HR: dict) -> str:
-    """
-    Validates a hazard report before processing.
-    Returns 'Valid' or a descriptive error string.
+REQUIRED_KEYS = [
+    "type",
+    "location",
+]
 
-    Checks (in order):
-      1. HR must be a dict.
-      2. Report must be marked complete (isComplete=True).
-      3. Report must be marked verified (isVerified=True).
-      4. Required keys must be present: type, location, verified.
-      5. Consistency: if isVerified=True, the numeric 'verified' field
-         must be > 0.  A verified flag with a zero credibility score is
-         contradictory and would silently produce misleading assessments.
+VALID_HAZARD_TYPES = {
+    "Flood",
+    "Storm Surge",
+    "Rainfall",
+    "Typhoon",
+}
+
+
+def validate_report(
+    HR: dict
+) -> str:
     """
+    Validates incoming hazard report data.
+
+    Returns
+    -------
+    "Valid"
+        if report passes validation.
+
+    error string
+        if validation fails.
+    """
+
+    # ── Basic type validation ────────────────────────────────────────
+
     if not isinstance(HR, dict):
-        logger.error("HR must be a dictionary.")
+
+        logger.error(
+            "Hazard report must be a dictionary."
+        )
+
         return "Invalid Report: bad format"
 
-    if not HR.get("isComplete", False):
-        logger.warning("Report is incomplete: %s", HR)
+    # ── Completion validation ────────────────────────────────────────
+
+    if not HR.get("isComplete", True):
+
+        logger.warning(
+            "Incomplete report: %s",
+            HR
+        )
+
         return "Invalid Report: incomplete"
 
-    if not HR.get("isVerified", False):
-        logger.warning("Report is unverified: %s", HR)
-        return "Unverified Report"
+    # ── Required field validation ────────────────────────────────────
 
-    required_keys = ["type", "location", "verified"]
-    for key in required_keys:
+    for key in REQUIRED_KEYS:
+
         if key not in HR:
-            logger.error("Missing required key: %s", key)
-            return f"Invalid Report: missing '{key}'"
 
-    # ── Consistency check ─────────────────────────────────────────────────────
-    # isVerified=True declares that a human or trusted source confirmed this
-    # report.  The numeric 'verified' field carries that credibility into the
-    # weighted scoring pipeline.  A value of 0 means "no credibility" — which
-    # contradicts isVerified=True and would cause the report indicator to
-    # contribute zero score regardless of how trustworthy the source is.
-    verified_value = HR.get("verified")
-    if not isinstance(verified_value, (int, float)):
-        logger.error(
-            "'verified' must be a number, got %s (%s).",
-            verified_value, type(verified_value).__name__,
-        )
-        return "Invalid Report: 'verified' must be a number"
+            logger.error(
+                "Missing required key: %s",
+                key
+            )
 
-    if verified_value <= 0:
-        logger.error(
-            "Contradictory report: isVerified=True but verified=%s. "
-            "'verified' must be > 0 when the report is marked as verified.",
-            verified_value,
+            return (
+                f"Invalid Report: "
+                f"missing '{key}'"
+            )
+
+    # ── Hazard type validation ───────────────────────────────────────
+
+    hazard_type = str(
+        HR.get("type", "")
+    ).strip()
+
+    if (
+        hazard_type and
+        hazard_type not in VALID_HAZARD_TYPES
+    ):
+
+        logger.warning(
+            "Unknown hazard type: %s",
+            hazard_type
         )
-        return "Invalid Report: 'verified' must be > 0 when isVerified is True"
+
+    # ── Optional verification logic ─────────────────────────────────
+    # Verification is now optional because:
+    #   - system relies mainly on weather APIs
+    #   - GIS hazard layers
+    #   - ML predictions
+    #
+    # Community reports are supplementary only.
+
+    verified_score = HR.get("verified")
+
+    if verified_score is not None:
+
+        if not isinstance(
+            verified_score,
+            (int, float)
+        ):
+
+            logger.error(
+                "'verified' must be numeric."
+            )
+
+            return (
+                "Invalid Report: "
+                "'verified' must be numeric"
+            )
+
+        if verified_score < 0:
+
+            logger.error(
+                "'verified' cannot be negative."
+            )
+
+            return (
+                "Invalid Report: "
+                "'verified' cannot be negative"
+            )
+
+    logger.debug(
+        "Hazard report validated successfully."
+    )
 
     return "Valid"
