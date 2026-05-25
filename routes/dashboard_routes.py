@@ -50,7 +50,7 @@ def get_weather_history(barangay_id: int):
 
     response = (
         supabase
-        .table("weather_history")
+        .table("weather_data")
         .select("*")
         .eq("barangay_id", barangay_id)
         .order("timestamp", desc=True)
