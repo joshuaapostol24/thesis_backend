@@ -2,7 +2,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-VALID_RISK_LEVELS = {"LOW", "MODERATE", "HIGH"}
+VALID_RISK_LEVELS = {
+    "VERY LOW",
+    "LOW",
+    "MODERATE",
+    "HIGH",
+    "VERY HIGH",
+}
 
 
 def generate_alert(hazard: str, barangay: str, risk_level: str) -> dict:

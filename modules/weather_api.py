@@ -5,53 +5,50 @@ import requests
 
 from modules.config import get_openweather_key
 from modules.database import engine
+from modules.normalization import BARANGAY_PROFILES
+from modules.risk_adjustment import (
+    ORANGE_RAINFALL_MM,
+    YELLOW_RAINFALL_MM,
+)
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 # ── Per-barangay rainfall thresholds ─────────────────────────────────────────
-# Matches normalization.py sensitivity bounds per barangay.
-# HIGH barangays use lower thresholds → trigger alerts sooner.
-# LOW barangays use higher thresholds → less sensitive.
-_BARANGAY_RISK_THRESHOLDS = {
-    7:  {"high": 15.0, "moderate": 4.0},   # Tayamaan    — HIGH
-    15: {"high": 15.0, "moderate": 4.0},   # Poblacion 8 — HIGH
-    4:  {"high": 25.0, "moderate": 8.0},   # San Luis    — LOW
-    6:  {"high": 25.0, "moderate": 8.0},   # Tangkalan   — LOW
-}
-_DEFAULT_THRESHOLDS = {"high": 20.0, "moderate": 5.0}
+# Keep CNN-LSTM training labels aligned with PAGASA rainfall advisories.
 
 # ── Per-barangay structural profiles for training data ────────────────────────
-# soil = estimated saturation baseline, flood/storm_surge from hazard profile
-_BARANGAY_PROFILES = {
-    1:  {"soil": 2.07, "flood": 0.20, "storm_surge": 1.00},  # Balansay    MODERATE SSA3
-    2:  {"soil": 2.03, "flood": 0.20, "storm_surge": 1.00},  # Fatima      MODERATE SSA3
-    3:  {"soil": 2.10, "flood": 0.20, "storm_surge": 1.00},  # Payompon    MODERATE SSA3
-    4:  {"soil": 2.22, "flood": 0.20, "storm_surge": 0.00},  # San Luis    LOW
-    5:  {"soil": 2.20, "flood": 0.20, "storm_surge": 1.00},  # Talabaan    MODERATE SSA3
-    6:  {"soil": 2.18, "flood": 0.60, "storm_surge": 0.00},  # Tangkalan   LOW medium flood
-    7:  {"soil": 2.17, "flood": 0.60, "storm_surge": 1.00},  # Tayamaan    HIGH
-    8:  {"soil": 2.14, "flood": 0.20, "storm_surge": 1.00},  # Poblacion 1 MODERATE SSA3
-    9:  {"soil": 2.12, "flood": 0.20, "storm_surge": 1.00},  # Poblacion 2 MODERATE SSA3
-    10: {"soil": 2.09, "flood": 0.20, "storm_surge": 1.00},  # Poblacion 3 MODERATE SSA3
-    11: {"soil": 2.72, "flood": 0.20, "storm_surge": 1.00},  # Poblacion 4 MODERATE SSA3
-    12: {"soil": 1.96, "flood": 0.20, "storm_surge": 1.00},  # Poblacion 5 MODERATE SSA3
-    13: {"soil": 2.01, "flood": 0.20, "storm_surge": 1.00},  # Poblacion 6 MODERATE SSA3
-    14: {"soil": 2.47, "flood": 0.20, "storm_surge": 1.00},  # Poblacion 7 MODERATE SSA3
-    15: {"soil": 2.67, "flood": 0.60, "storm_surge": 1.00},  # Poblacion 8 HIGH
+# soil = estimated saturation baseline; flood/storm_surge come from normalization.py
+_BARANGAY_SOIL_BASELINES = {
+    1:  2.07,
+    2:  2.03,
+    3:  2.10,
+    4:  2.22,
+    5:  2.20,
+    6:  2.18,
+    7:  2.17,
+    8:  2.14,
+    9:  2.12,
+    10: 2.09,
+    11: 2.72,
+    12: 1.96,
+    13: 2.01,
+    14: 2.47,
+    15: 2.67,
 }
 
 
 def _risk_label_for_barangay(rainfall: float, barangay_id: int) -> int:
     """
-    Computes risk label (1/2/3) using per-barangay rainfall thresholds.
-    Consistent with normalization bounds in normalization.py.
+    Computes the CNN-LSTM training label using PAGASA rainfall thresholds.
+
+    Labels remain 1/2/3 because the model predicts a 0-3 score; the final
+    rule classification and rainfall guardrail separate HIGH from VERY HIGH.
     """
-    thresholds = _BARANGAY_RISK_THRESHOLDS.get(barangay_id, _DEFAULT_THRESHOLDS)
-    if rainfall >= thresholds["high"]:
+    if rainfall >= ORANGE_RAINFALL_MM:
         return 3
-    if rainfall >= thresholds["moderate"]:
+    if rainfall >= YELLOW_RAINFALL_MM:
         return 2
     return 1
 
@@ -86,8 +83,8 @@ def save_weather_data(weather: dict) -> None:
 def save_training_samples(weather: dict) -> None:
     """
     Saves one training record per barangay using current weather data.
-    Each barangay gets a different risk_label based on its own
-    rainfall sensitivity threshold — not a single shared label.
+    Each barangay gets the same PAGASA rainfall label, while structural
+    flood/storm-surge features still differ by barangay.
 
     This runs on every weather API call so barangay_training_data
     grows continuously with real observed weather data.
@@ -100,7 +97,7 @@ def save_training_samples(weather: dict) -> None:
 
     try:
         with engine.begin() as conn:
-            for barangay_id, profile in _BARANGAY_PROFILES.items():
+            for barangay_id, profile in BARANGAY_PROFILES.items():
                 risk_label = _risk_label_for_barangay(rainfall, barangay_id)
 
                 conn.execute(text("""
@@ -116,7 +113,7 @@ def save_training_samples(weather: dict) -> None:
                     "timestamp":   current_time,
                     "rainfall":    rainfall,
                     "humidity":    humidity,
-                    "soil":        profile["soil"],
+                    "soil":        _BARANGAY_SOIL_BASELINES.get(barangay_id, 0.0),
                     "flood":       profile["flood"],
                     "storm_surge": profile["storm_surge"],
                     "risk_label":  risk_label,

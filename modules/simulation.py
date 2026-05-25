@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import logging
 
+from datetime import datetime
+
 from dataclasses import (
     dataclass,
     field,
@@ -67,6 +69,16 @@ class SimulationResult:
     )
 
     @property
+    def very_high_risk_barangays(
+        self
+    ) -> List[BarangaySimResult]:
+
+        return [
+            b for b in self.barangays
+            if b.risk_level == "VERY HIGH"
+        ]
+
+    @property
     def high_risk_barangays(
         self
     ) -> List[BarangaySimResult]:
@@ -94,6 +106,16 @@ class SimulationResult:
         return [
             b for b in self.barangays
             if b.risk_level == "LOW"
+        ]
+
+    @property
+    def very_low_risk_barangays(
+        self
+    ) -> List[BarangaySimResult]:
+
+        return [
+            b for b in self.barangays
+            if b.risk_level == "VERY LOW"
         ]
 
     def to_dict(self) -> dict:
@@ -136,6 +158,9 @@ class SimulationResult:
 
             "summary": {
 
+                "very_high":
+                    len(self.very_high_risk_barangays),
+
                 "high":
                     len(self.high_risk_barangays),
 
@@ -144,6 +169,9 @@ class SimulationResult:
 
                 "low":
                     len(self.low_risk_barangays),
+
+                "very_low":
+                    len(self.very_low_risk_barangays),
             },
 
             "barangays": [
@@ -226,6 +254,10 @@ def _simulate_barangay(
         fuse_risk
     )
 
+    from modules.risk_adjustment import (
+        apply_rainfall_adjustment
+    )
+
     # ── Resolve barangay name ───────────────────────────────────────
 
     name = (
@@ -252,7 +284,9 @@ def _simulate_barangay(
 
     # ── Dynamic soil computation ────────────────────────────────────
 
-    season = get_season_from_month(1)
+    season = get_season_from_month(
+        datetime.utcnow().month
+    )
 
     soil = compute_soil_saturation(
         humidity,
@@ -288,6 +322,9 @@ def _simulate_barangay(
                     0.0
                 )
             ),
+
+        "season":
+            season,
     }
 
     # ── Context loading ─────────────────────────────────────────────
@@ -386,6 +423,12 @@ def _simulate_barangay(
 
         barangay_id=barangay_id,
         hazard_profile=hazard_profile,
+    )
+
+    final_score = apply_rainfall_adjustment(
+        final_score,
+        rainfall,
+        barangay_id,
     )
 
     # ── Risk classification ────────────────────────────────────────

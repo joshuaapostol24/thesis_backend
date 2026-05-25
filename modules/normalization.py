@@ -53,8 +53,8 @@ BARANGAY_RAINFALL_BOUNDS = {
 
 # ── Flood normalization bounds ──────────────────────────────────────────────
 BARANGAY_FLOOD_BOUNDS = {
-    barangay_id: (0.0, profile["flood"])
-    for barangay_id, profile in BARANGAY_PROFILES.items()
+    barangay_id: INDICATOR_RANGES["flood"]
+    for barangay_id in BARANGAY_PROFILES.keys()
 }
 
 # ── Humidity normalization bounds ───────────────────────────────────────────
@@ -65,11 +65,8 @@ BARANGAY_HUMIDITY_BOUNDS = {
 
 # ── Storm surge normalization bounds ────────────────────────────────────────
 BARANGAY_STORM_SURGE_BOUNDS = {
-    barangay_id: (
-        0.0,
-        1.0 if profile["storm_surge"] >= 1.0 else 0.2
-    )
-    for barangay_id, profile in BARANGAY_PROFILES.items()
+    barangay_id: INDICATOR_RANGES["storm_surge"]
+    for barangay_id in BARANGAY_PROFILES.keys()
 }
 
 

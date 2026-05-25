@@ -66,9 +66,9 @@ def compute_barangay_weights(
     """
 
     profile  = hazard_profile or BARANGAY_PROFILES.get(barangay_id, {})
-    overall  = profile.get("overall_hazard", "MODERATE")
-    flood    = profile.get("flood_hazard_score", 0.20)
-    surge    = profile.get("storm_surge_score", 0.00)
+    overall  = profile.get("overall_hazard", profile.get("overall", "MODERATE"))
+    flood    = profile.get("flood_hazard_score", profile.get("flood", 0.20))
+    surge    = profile.get("storm_surge_score", profile.get("storm_surge", 0.00))
 
     # ── HIGH RISK COASTAL ────────────────────────────────────────────────
     if overall == "HIGH":

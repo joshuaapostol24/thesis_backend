@@ -17,6 +17,7 @@ from modules.rule_engine import (
 )
 from modules.cnn_lstm import predict_risk
 from modules.fusion import fuse_risk
+from modules.risk_adjustment import apply_rainfall_adjustment
 from modules.feedback import store_data
 from modules.weather_api import get_weather
 from modules.database import (
@@ -289,19 +290,13 @@ def predict(req: PredictRequest):
         )
 
         # ── Rainfall gating ──────────────────────────────────────────
-        # Prevent false flood alerts during dry weather
+        # Suppress dry-weather false alerts and preserve severe rainfall.
 
-        if rainfall < 2.0:
-
-            logger.info(
-                "Barangay %d | "
-                "Low rainfall gating activated "
-                "(%.2f mm)",
-                req.barangay_id,
-                rainfall
-            )
-
-            final_risk *= 0.4
+        final_risk = apply_rainfall_adjustment(
+            final_risk,
+            rainfall,
+            req.barangay_id
+        )
 
         # ── Final classification ────────────────────────────────────
 
