@@ -48,14 +48,23 @@ def get_dashboard_data():
 @router.get("/weather/history/{barangay_id}")
 def get_weather_history(barangay_id: int):
 
-    response = (
-        supabase
-        .table("weather_data")
-        .select("*")
-        ("barangay_id", barangay_id)
-        .order("timestamp", desc=True)
-        .limit(20)
-        .execute()
-    )
+    try:
 
-    return response.data
+        response = (
+            supabase
+            .table("barangay_training_data")
+            .select("*")
+            .eq("barangay_id", barangay_id)
+            .order("timestamp", desc=True)
+            .limit(20)
+            .execute()
+        )
+
+        return response.data
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
+
