@@ -14,7 +14,7 @@ from routes.barangay_routes import router as barangay_router
 from routes.news_routes import router as news_router
 from routes.prediction_routes import router as prediction_router
 from routes.simulation_routes import router as simulation_router
-
+from routes.dashboard_routes import router as dashboard_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -136,6 +136,7 @@ app.include_router(prediction_router)
 app.include_router(simulation_router)
 app.include_router(news_router)
 app.include_router(user_router)
+app.include_router(dashboard_router)
 
 
 # =========================================================
