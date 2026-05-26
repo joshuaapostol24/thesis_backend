@@ -14,21 +14,21 @@ INDICATOR_RANGES = {
 # ── Unified barangay hazard profiles ─────────────────────────────────────────
 # Synced with GIS + weather collector + context.py
 BARANGAY_PROFILES = {
-    1:  {"name": "Balansay",    "overall": "LOW",      "flood": 0.20, "storm_surge": 0.00},
-    2:  {"name": "Fatima",      "overall": "LOW",      "flood": 0.20, "storm_surge": 0.00},
-    3:  {"name": "Payompon",    "overall": "MODERATE", "flood": 1.00, "storm_surge": 0.00},
+    1:  {"name": "Balansay",    "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
+    2:  {"name": "Fatima",      "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
+    3:  {"name": "Payompon",    "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
     4:  {"name": "San Luis",    "overall": "LOW",      "flood": 0.20, "storm_surge": 0.00},
-    5:  {"name": "Talabaan",    "overall": "LOW",      "flood": 0.60, "storm_surge": 0.00},
+    5:  {"name": "Talabaan",    "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
     6:  {"name": "Tangkalan",   "overall": "LOW",      "flood": 0.60, "storm_surge": 0.00},
-    7:  {"name": "Tayamaan",    "overall": "MODERATE", "flood": 1.00, "storm_surge": 0.00},
-    8:  {"name": "Poblacion 1", "overall": "LOW",      "flood": 0.20, "storm_surge": 0.00},
-    9:  {"name": "Poblacion 2", "overall": "HIGH",     "flood": 0.60, "storm_surge": 1.00},
-    10: {"name": "Poblacion 3", "overall": "LOW",      "flood": 0.20, "storm_surge": 0.00},
-    11: {"name": "Poblacion 4", "overall": "LOW",      "flood": 0.20, "storm_surge": 0.00},
-    12: {"name": "Poblacion 5", "overall": "HIGH",     "flood": 0.60, "storm_surge": 1.00},
-    13: {"name": "Poblacion 6", "overall": "MODERATE", "flood": 1.00, "storm_surge": 0.00},
-    14: {"name": "Poblacion 7", "overall": "MODERATE", "flood": 1.00, "storm_surge": 0.00},
-    15: {"name": "Poblacion 8", "overall": "LOW",      "flood": 0.20, "storm_surge": 0.00},
+    7:  {"name": "Tayamaan",    "overall": "HIGH",     "flood": 0.60, "storm_surge": 1.00},
+    8:  {"name": "Poblacion 1", "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
+    9:  {"name": "Poblacion 2", "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
+    10: {"name": "Poblacion 3", "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
+    11: {"name": "Poblacion 4", "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
+    12: {"name": "Poblacion 5", "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
+    13: {"name": "Poblacion 6", "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
+    14: {"name": "Poblacion 7", "overall": "MODERATE", "flood": 0.20, "storm_surge": 1.00},
+    15: {"name": "Poblacion 8", "overall": "HIGH",     "flood": 0.60, "storm_surge": 1.00},
 }
 
 # ── Rainfall normalization bounds ────────────────────────────────────────────

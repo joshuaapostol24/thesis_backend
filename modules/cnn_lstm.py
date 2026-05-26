@@ -74,10 +74,15 @@ SEQ_LEN       = 90
 
 # ── Weights storage ───────────────────────────────────────────────────────────
 
+_DEFAULT_WEIGHTS_DIR = (
+    Path(__file__).resolve().parent.parent /
+    "weights"
+)
+
 _WEIGHTS_DIR = Path(
     os.environ.get(
         "BARANGAY_WEIGHTS_DIR",
-        "weights"
+        str(_DEFAULT_WEIGHTS_DIR)
     )
 )
 
