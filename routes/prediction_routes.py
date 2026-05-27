@@ -152,25 +152,42 @@ def predict(req: PredictRequest):
         E.update(weather)
 
         # ── DB rainfall fallback ──────────────────────────────────────
+        # Only trigger when API truly returned nothing (key is absent).
+        # Do NOT pull DB data when API returns 0 — that is a valid
+        # "no rainfall" reading, not a missing value.
 
-        if float(E.get("rainfall", 0.0)) <= 0:
+        if E.get("rainfall") is None:
 
             db_features = get_barangay_features(
                 req.barangay_id
             )
 
-            if db_features.get("rainfall", 0) > 0:
+            E["rainfall"] = (
+                db_features.get("rainfall", 0.0) or 0.0
+            )
 
-                E["rainfall"] = (
-                    db_features["rainfall"]
-                )
+            logger.info(
+                "Barangay %d | "
+                "Using DB rainfall fallback: %.2f mm",
+                req.barangay_id,
+                E["rainfall"]
+            )
 
-                logger.info(
-                    "Barangay %d | "
-                    "Using DB rainfall fallback: %.2f mm",
-                    req.barangay_id,
-                    E["rainfall"]
-                )
+        # ── Rainfall noise filter ─────────────────────────────────────
+        # API sometimes returns trace values (< 1mm) due to sensor
+        # interpolation between weather stations, not actual rainfall.
+        # Treat anything below threshold as effectively zero.
+
+        elif float(E.get("rainfall", 0.0)) < 1.0:
+
+            logger.info(
+                "Barangay %d | "
+                "Trace rainfall %.2f mm filtered to 0.0",
+                req.barangay_id,
+                E["rainfall"]
+            )
+
+            E["rainfall"] = 0.0
 
         # ── Season + soil computation ────────────────────────────────
 
@@ -298,14 +315,14 @@ def predict(req: PredictRequest):
             req.barangay_id
         )
 
-        # ── Final classification ────────────────────────────────────
+        # ── Final classification ─────────────────────────────────────
 
         risk_level = apply_rules(
             rules,
             final_risk
         )
 
-        # ── Persist assessment ──────────────────────────────────────
+        # ── Persist assessment ───────────────────────────────────────
 
         HR.update({
 
