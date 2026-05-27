@@ -31,16 +31,18 @@ def apply_rainfall_adjustment(
 
     final_risk = float(final_risk)
     rainfall = max(0.0, float(rainfall))
+    DRY_RAINFALL_MM = 2.0
+    DRY_SCORE_CEILING = 0.49  
 
     if rainfall < DRY_RAINFALL_MM:
-        adjusted = final_risk * 0.4
+        adjusted = min(final_risk * 0.4, DRY_SCORE_CEILING)
         logger.info(
-            "Barangay %s | dry rainfall adjustment %.2f -> %.4f",
-            barangay_id,
-            rainfall,
-            adjusted,
-        )
-        return adjusted
+        "Barangay %s | dry rainfall adjustment %.2f -> %.4f",
+        barangay_id,
+        rainfall,
+        adjusted,
+    )
+    return adjusted
 
     if rainfall > RED_RAINFALL_MM:
         adjusted = max(

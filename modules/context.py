@@ -52,8 +52,11 @@ BARANGAY_PROFILES = {
 
 def compute_barangay_weights(
     barangay_id: int,
-    hazard_profile: dict = None
+    hazard_profile: dict = None,
+    rainfall: float = 0.0,      
+    wind_speed: float = 0.0,
 ) -> dict:
+
     """
     Computes adaptive indicator weights per barangay.
 
@@ -70,17 +73,26 @@ def compute_barangay_weights(
     flood    = profile.get("flood_hazard_score", profile.get("flood", 0.20))
     surge    = profile.get("storm_surge_score", profile.get("storm_surge", 0.00))
 
-    # ── HIGH RISK COASTAL ────────────────────────────────────────────────
+   # ── HIGH RISK COASTAL ────────────────────────────────────────────────
     if overall == "HIGH":
 
-        weights = {
-            "rainfall":    0.20,
-            "soil":        0.20,
-            "flood":       0.25,
-            "humidity":    0.10,
-            "storm_surge": 0.25,
-        }
+        # Storm surge is only relevant with actual weather trigger
+        surge_weight = (
+        0.25 if (rainfall >= 2.0 or wind_speed >= 20.0)
+        else 0.05
+    )
 
+    weights = {
+        "rainfall":    0.20,
+        "soil":        0.20,
+        "flood":       0.25,
+        "humidity":    0.10,
+        "storm_surge": surge_weight,
+    }
+
+    # Redistribute the freed weight to rainfall
+    if surge_weight == 0.05:
+        weights["rainfall"] = 0.40
     # ── MODERATE FLOOD-SENSITIVE ────────────────────────────────────────
     elif overall == "MODERATE":
 
@@ -131,7 +143,9 @@ def compute_barangay_weights(
 
 def load_context(
     HR: dict,
-    hazard_profile: dict = None
+    hazard_profile: dict = None,
+    rainfall: float = 0.0,     # ← add
+    wind_speed: float = 0.0,   # ← add
 ) -> tuple:
     """
     Loads fuzzy inference context.
@@ -151,7 +165,9 @@ def load_context(
 
     weights = compute_barangay_weights(
         barangay_id,
-        hazard_profile
+        hazard_profile,
+        rainfall=rainfall,      # ← add
+        wind_speed=wind_speed   # ← add
     )
 
     sorted_rules = sorted(
