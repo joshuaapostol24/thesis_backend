@@ -69,7 +69,7 @@ BARANGAY_IDS: List[int] = list(range(1, 16))
 _TRAIN_EPOCHS = 100
 _TRAIN_LR     = 1e-3
 _BATCH_SIZE   = 64
-_MAX_ROWS     = 730
+_MAX_ROWS     = 2000
 SEQ_LEN       = 90
 
 # ── Weights storage ───────────────────────────────────────────────────────────

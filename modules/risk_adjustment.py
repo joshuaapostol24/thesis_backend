@@ -42,7 +42,7 @@ def apply_rainfall_adjustment(
         rainfall,
         adjusted,
     )
-    return adjusted
+        return adjusted
 
     if rainfall > RED_RAINFALL_MM:
         adjusted = max(
