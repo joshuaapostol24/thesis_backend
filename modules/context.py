@@ -54,6 +54,7 @@ def compute_barangay_weights(
     barangay_id: int,
     hazard_profile: dict = None,
     rainfall: float = 0.0,      
+    surge_weight = 0.0,
     wind_speed: float = 0.0,
 ) -> dict:
 
