@@ -265,6 +265,78 @@ def _simulate_barangay(
         or f"Barangay {barangay_id}"
     )
 
+    # ── Patch hazard_profile with fallback GIS scores ───────────────
+    # Temporary: until gis_sync.py populates real values, inject a
+    # per-barangay spread so context.py, fusion.py, and rule_score
+    # all see different flood/surge values per barangay.
+    # Remove this block once barangay_hazard_profile has real GIS data.
+
+    # Temporary fallback until gis_sync.py populates real GIS values.
+    # Flood scores: Low=1.0, Moderate=2.0, High=4.0  (FLOOD_LEVEL_SCORE scale)
+    # Surge scores: None=0.0, SSA1=1.0, SSA2=2.0, SSA3=3.0, SSA4=4.0
+    _FLOOD_FALLBACK = {
+        1:  1.0,   # Balansay    - Low flood
+        2:  1.0,   # Fatima      - Low flood
+        3:  1.0,   # Payompon    - Low flood
+        4:  1.0,   # San Luis    - Low flood
+        5:  1.0,   # Talabaan    - Low flood
+        6:  2.0,   # Tangkalan   - Moderate flood
+        7:  2.0,   # Tayamaan    - Moderate flood  (HIGH overall)
+        8:  1.0,   # Poblacion 1 - Low flood
+        9:  1.0,   # Poblacion 2 - Low flood
+        10: 1.0,   # Poblacion 3 - Low flood
+        11: 1.0,   # Poblacion 4 - Low flood
+        12: 1.0,   # Poblacion 5 - Low flood
+        13: 1.0,   # Poblacion 6 - Low flood
+        14: 1.0,   # Poblacion 7 - Low flood
+        15: 2.0,   # Poblacion 8 - Moderate flood  (HIGH overall)
+    }
+    _SURGE_FALLBACK = {
+        1:  1.0,   # Balansay    - SSA1
+        2:  1.0,   # Fatima      - SSA1
+        3:  1.0,   # Payompon    - SSA1
+        4:  0.0,   # San Luis    - No surge
+        5:  1.0,   # Talabaan    - SSA1
+        6:  0.0,   # Tangkalan   - No surge
+        7:  1.0,   # Tayamaan    - SSA1  (HIGH overall)
+        8:  1.0,   # Poblacion 1 - SSA1
+        9:  1.0,   # Poblacion 2 - SSA1
+        10: 1.0,   # Poblacion 3 - SSA1
+        11: 1.0,   # Poblacion 4 - SSA1
+        12: 1.0,   # Poblacion 5 - SSA1
+        13: 1.0,   # Poblacion 6 - SSA1
+        14: 1.0,   # Poblacion 7 - SSA1
+        15: 1.0,   # Poblacion 8 - SSA1  (HIGH overall)
+    }
+    _OVERALL_FALLBACK = {
+        1:  "MODERATE",  # Balansay
+        2:  "MODERATE",  # Fatima
+        3:  "MODERATE",  # Payompon
+        4:  "LOW",       # San Luis
+        5:  "MODERATE",  # Talabaan
+        6:  "LOW",       # Tangkalan
+        7:  "HIGH",      # Tayamaan
+        8:  "MODERATE",  # Poblacion 1
+        9:  "MODERATE",  # Poblacion 2
+        10: "MODERATE",  # Poblacion 3
+        11: "MODERATE",  # Poblacion 4
+        12: "MODERATE",  # Poblacion 5
+        13: "MODERATE",  # Poblacion 6
+        14: "MODERATE",  # Poblacion 7
+        15: "HIGH",      # Poblacion 8
+    }
+
+    _raw_flood = hazard_profile.get("flood_hazard_score")
+    _raw_surge = hazard_profile.get("storm_surge_score")
+
+    if _raw_flood in (None, 0.0, 0.20):
+        hazard_profile = {
+            **hazard_profile,
+            "flood_hazard_score": _FLOOD_FALLBACK.get(barangay_id, 1.0),
+            "storm_surge_score":  _SURGE_FALLBACK.get(barangay_id, 0.0),
+            "overall_hazard":     _OVERALL_FALLBACK.get(barangay_id, "MODERATE"),
+        }
+
     # ── Build HR context ────────────────────────────────────────────
 
     HR = {
@@ -308,26 +380,19 @@ def _simulate_barangay(
             soil,
 
         "flood":
-            float(
-                hazard_profile.get(
-                    "flood_hazard_score",
-                    0.20
-                )
-            ),
+            float(hazard_profile.get("flood_hazard_score", 1.0)),
 
         "storm_surge":
-            float(
-                hazard_profile.get(
-                    "storm_surge_score",
-                    0.0
-                )
-            ),
+            float(hazard_profile.get("storm_surge_score", 0.0)),
 
         "season":
             season,
     }
 
     # ── Context loading ─────────────────────────────────────────────
+    # Pass rainfall + wind_speed so load_context computes the same
+    # adaptive weights as prediction_routes.py — without these, every
+    # barangay gets identical default weights regardless of conditions.
 
     (
         _,
@@ -337,8 +402,12 @@ def _simulate_barangay(
         rules,
     ) = load_context(
         HR,
-        hazard_profile
+        hazard_profile,
+        rainfall=rainfall,
+        wind_speed=wind_speed,
     )
+
+
 
     # ── Rule engine ─────────────────────────────────────────────────
 
@@ -414,6 +483,50 @@ def _simulate_barangay(
         {}
     )
 
+    # ── Hazard profile boost on ml_score ────────────────────────────
+    # The model was trained on flat GIS data (flood≈0.20, surge≈0.00)
+    # so it underestimates risk for high-hazard barangays.
+    # We correct this by scaling ml_score up based on the barangay's
+    # structural hazard, capped at MAX_ML_SCORE (3.0).
+    #
+    # Boost formula:
+    #   flood_ratio  = flood_score  / MAX_FLOOD  (0.0 – 1.0)
+    #   surge_ratio  = surge_score  / MAX_SURGE  (0.0 – 1.0)
+    #   hazard_index = (flood_ratio + surge_ratio) / 2
+    #
+    # overall_hazard multiplier:
+    #   HIGH     → up to +35% boost
+    #   MODERATE → up to +20% boost
+    #   LOW      → up to +10% boost
+    #
+    # Remove this block once models are retrained on real GIS data.
+
+    _MAX_FLOOD  = 4.0
+    _MAX_SURGE  = 4.0
+    _MAX_ML     = 3.0
+
+    _flood_ratio  = float(hazard_profile.get("flood_hazard_score", 0.0)) / _MAX_FLOOD
+    _surge_ratio  = float(hazard_profile.get("storm_surge_score",  0.0)) / _MAX_SURGE
+    _hazard_index = (_flood_ratio + _surge_ratio) / 2.0
+
+    _boost_ceiling = {
+        "HIGH":     0.35,
+        "MODERATE": 0.20,
+        "LOW":      0.10,
+    }.get(hazard_profile.get("overall_hazard", "MODERATE"), 0.20)
+
+    _ml_boost  = _hazard_index * _boost_ceiling
+    ml_score   = min(_MAX_ML, ml_score * (1.0 + _ml_boost))
+
+    logger.info(
+        "Simulation | Barangay %02d %s | "
+        "hazard_index=%.3f boost=+%.1f%% ml_score=%.4f",
+        barangay_id, name,
+        _hazard_index,
+        _ml_boost * 100,
+        ml_score,
+    )
+
     # ── Fusion ──────────────────────────────────────────────────────
 
     final_score = fuse_risk(
@@ -429,6 +542,9 @@ def _simulate_barangay(
         final_score,
         rainfall,
         barangay_id,
+        ml_score=ml_score,
+        rule_score=rule_score,
+        hazard_profile=hazard_profile,
     )
 
     # ── Risk classification ────────────────────────────────────────
