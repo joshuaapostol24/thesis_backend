@@ -107,7 +107,7 @@ def get_dashboard_data():
                 "rank":          rank,
                 "barangay_name": b.get("barangay_name", f"Barangay {b.get('barangay_id', rank)}"),
                 "risk_level":    b.get("risk_level", "N/A"),
-                "final_risk":    round(float(final) * 100, 1),
+                "final_risk":    round(float(final), 4),
             })
 
         latest_simulation = {
