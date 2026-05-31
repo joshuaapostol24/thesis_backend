@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException
 from supabase import create_client
-from pymongo import MongoClient
 import os
 
 router = APIRouter()
@@ -92,62 +91,30 @@ def get_dashboard_data():
     if sim_response.data:
         s = sim_response.data[0]
 
-        # Get barangay names from risk_assessments for this sim's timestamp
-        # Find top barangays from the most recent risk assessments
-        risk_response = (
-            supabase.table("risk_assessments")
-            .select("barangay_id, risk_level, final_risk, timestamp")
-            .order("timestamp", desc=True)
-            .limit(500)
-            .execute()
-        )
-        seen           = set()
-        latest_per_bgy = []
-        for row in (risk_response.data or []):
-            bid = row["barangay_id"]
-            if bid not in seen:
-                seen.add(bid)
-                latest_per_bgy.append(row)
+        # Use barangay data stored directly in the simulation run
+        barangays = s.get("barangays") or []
 
-        latest_per_bgy.sort(key=lambda r: (
-            _RISK_ORDER.get(r.get("risk_level", ""), 99),
-            -(r.get("final_risk") or 0),
+        # Sort by risk level then final score descending
+        barangays.sort(key=lambda b: (
+            _RISK_ORDER.get(b.get("risk_level", ""), 99),
+            -(b.get("final_score") or b.get("final_risk") or 0),
         ))
 
-        # Try to get barangay names
-        barangay_ids = [r["barangay_id"] for r in latest_per_bgy]
-        barangay_names = {}
-        if barangay_ids:
-            try:
-                bgy_response = (
-                    supabase.table("barangays")
-                    .select("id, name")
-                    .in_("id", barangay_ids)
-                    .execute()
-                )
-                for b in (bgy_response.data or []):
-                    barangay_names[b["id"]] = b["name"]
-            except Exception:
-                pass
-
         top_barangays = []
-        for rank, row in enumerate(latest_per_bgy, start=1):
-            bid  = row["barangay_id"]
-            name = barangay_names.get(bid, f"Barangay {bid}")
-            final_risk = row.get("final_risk") or 0
+        for rank, b in enumerate(barangays, start=1):
+            final = b.get("final_score") or b.get("final_risk") or 0
             top_barangays.append({
                 "rank":          rank,
-                "barangay_id":   bid,
-                "barangay_name": name,
-                "risk_level":    row.get("risk_level", "N/A"),
-                "final_risk":    round(float(final_risk) * 100, 1),
+                "barangay_name": b.get("barangay_name", f"Barangay {b.get('barangay_id', rank)}"),
+                "risk_level":    b.get("risk_level", "N/A"),
+                "final_risk":    round(float(final) * 100, 1),
             })
 
         latest_simulation = {
-            "id":           s["id"],
-            "created_at":   s["created_at"],
-            "rainfall":     s.get("rainfall"),
-            "humidity":     s.get("humidity"),
+            "id":            s["id"],
+            "created_at":    s["created_at"],
+            "rainfall":      s.get("rainfall"),
+            "humidity":      s.get("humidity"),
             "top_barangays": top_barangays,
         }
 
