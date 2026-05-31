@@ -15,6 +15,7 @@ from routes.news_routes import router as news_router
 from routes.prediction_routes import router as prediction_router
 from routes.simulation_routes import router as simulation_router
 from routes.dashboard_routes import router as dashboard_router
+from routes.simulation_routes import router as simulation_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
