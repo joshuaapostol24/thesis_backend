@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from supabase import create_client
+import httpx
 import os
 
 router = APIRouter()
@@ -14,28 +15,9 @@ _RISK_ORDER = {
     "MODERATE": 2, "LOW": 3, "VERY LOW": 4,
 }
 
-_mongo_client   = None
-_news_collection = None
-
-def _get_news_collection():
-    global _mongo_client, _news_collection
-    if _news_collection is None:
-        mongo_url        = os.environ.get("MONGODB_URL", "mongodb://localhost:27017")
-        _mongo_client    = MongoClient(mongo_url)
-        db               = _mongo_client[os.environ.get("MONGODB_DB", "resq")]
-        _news_collection = db["news"]
-    return _news_collection
-
 
 @router.get("/dashboard")
 def get_dashboard_data():
-    """
-    Returns complete dashboard summary including:
-    - Total users, reports, assessments
-    - Pending reports count + latest pending report
-    - Latest 5 news announcements
-    - Latest simulation with top barangays ranked by risk
-    """
 
     # ── Total users ───────────────────────────────────────────────────────────
     users_response = (
@@ -61,9 +43,9 @@ def get_dashboard_data():
         .order("created_at", desc=True)
         .execute()
     )
-    pending_data    = pending_response.data or []
-    pending_count   = len(pending_data)
-    latest_pending  = None
+    pending_data   = pending_response.data or []
+    pending_count  = len(pending_data)
+    latest_pending = None
     if pending_data:
         p = pending_data[0]
         latest_pending = {
@@ -91,10 +73,8 @@ def get_dashboard_data():
     if sim_response.data:
         s = sim_response.data[0]
 
-        # Use barangay data stored directly in the simulation run
         barangays = s.get("barangays") or []
 
-        # Sort by risk level then final score descending
         barangays.sort(key=lambda b: (
             _RISK_ORDER.get(b.get("risk_level", ""), 99),
             -(b.get("final_score") or b.get("final_risk") or 0),
@@ -118,21 +98,24 @@ def get_dashboard_data():
             "top_barangays": top_barangays,
         }
 
-    # ── Latest 5 news announcements ───────────────────────────────────────────
+    # ── Latest 5 news announcements (via news API) ────────────────────────────
     latest_news = []
     try:
-        collection = _get_news_collection()
-        news_items = list(
-            collection.find({}, {"_id": 0, "title": 1, "category": 1, "createdAt": 1, "date": 1})
-            .sort("createdAt", -1)
-            .limit(5)
-        )
-        for item in news_items:
-            latest_news.append({
-                "title":      item.get("title", ""),
-                "category":   item.get("category", ""),
-                "created_at": item.get("createdAt") or item.get("date"),
-            })
+        backend_url   = os.environ.get("BACKEND_URL", "https://resq-app-xsb98.ondigitalocean.app")
+        news_response = httpx.get(f"{backend_url}/api/news/all", timeout=5.0)
+        if news_response.status_code == 200:
+            all_news = news_response.json()
+            if isinstance(all_news, list):
+                all_news.sort(
+                    key=lambda x: x.get("createdAt") or x.get("date") or "",
+                    reverse=True
+                )
+                for item in all_news[:5]:
+                    latest_news.append({
+                        "title":      item.get("title", ""),
+                        "category":   item.get("category", ""),
+                        "created_at": item.get("createdAt") or item.get("date"),
+                    })
     except Exception as e:
         print("News fetch error:", str(e))
 
@@ -271,8 +254,8 @@ def get_simulation_run(run_id: int):
             },
             "summary": {
                 "very_high": row["very_high_count"], "high": row["high_count"],
-                "moderate": row["moderate_count"],   "low": row["low_count"],
-                "very_low": row["very_low_count"],
+                "moderate":  row["moderate_count"],  "low": row["low_count"],
+                "very_low":  row["very_low_count"],
             },
             "barangays": row.get("barangays"),
         }
@@ -303,8 +286,8 @@ def get_latest_simulation():
             },
             "summary": {
                 "very_high": row["very_high_count"], "high": row["high_count"],
-                "moderate": row["moderate_count"],   "low": row["low_count"],
-                "very_low": row["very_low_count"],
+                "moderate":  row["moderate_count"],  "low": row["low_count"],
+                "very_low":  row["very_low_count"],
             },
             "barangays": row.get("barangays"),
         }
