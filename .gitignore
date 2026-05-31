@@ -9,3 +9,4 @@ venv/
 env/
 .env
 assessment_log.jsonl
+credentials/firebase_service_account.json

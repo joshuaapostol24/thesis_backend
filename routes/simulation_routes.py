@@ -28,6 +28,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from typing import List
+from modules.simulation_notifier import send_simulation_notification
 
 from modules.simulation import run_simulation
 
@@ -152,7 +154,43 @@ def _load_simulation_history(limit: int = 10) -> list:
         logger.error("Failed to load simulation history: %s", exc)
         return []
 
+def _get_fcm_tokens(barangays: list[str] | None = None) -> list[str]:
+    """
+    Fetches FCM tokens for all approved users from Supabase.
+    If barangays list is provided, only fetches tokens for users
+    in those specific barangays — useful for targeted alerts.
 
+    e.g. _get_fcm_tokens(["Barangay Balansay", "Barangay Talabaan"])
+    """
+    try:
+        supabase = _get_supabase()
+        query    = (
+            supabase.table("users")
+            .select("fcm_token, address")
+            .eq("status", "approved")
+            .not_.is_("fcm_token", "null")
+        )
+
+        rows   = query.execute().data or []
+        tokens = []
+
+        for row in rows:
+            token = row.get("fcm_token", "").strip()
+            if not token:
+                continue
+            # If barangay filter is given, only include matching users
+            if barangays:
+                if any(row.get("address", "") == brgy for brgy in barangays):
+                    tokens.append(token)
+            else:
+                tokens.append(token)
+
+        logger.info("FCM tokens fetched | count=%d", len(tokens))
+        return tokens
+
+    except Exception as exc:
+        logger.error("Failed to fetch FCM tokens: %s", exc)
+        return []
 # =========================================================
 # RISK HELPERS
 # =========================================================
@@ -344,6 +382,46 @@ class SimulationRequest(BaseModel):
         }
 
 
+class PublishAnnouncementRequest(BaseModel):
+    """
+    Payload the frontend sends after the user confirms
+    the 'Publish Announcement?' modal.
+    Contains the announcement data + optional simulation context
+    for the FCM notification body.
+    """
+    # Announcement fields (matches what _build_announcement_payload returns)
+    title:    str
+    message:  str
+    category: str           = "Weather"
+    priority: str           = "High"
+    audience: str           = "All Residents"
+    pinned:   str           = "No"
+    date:     str           = ""
+
+    # FCM targeting — if empty, notifies ALL approved users
+    # Pass specific barangay names to target only affected residents
+    # e.g. ["Barangay Balansay", "Barangay Talabaan"]
+    target_barangays: List[str] = []
+
+    # The full simulation dict is needed to build a rich FCM body.
+    # Pass the same `barangays` + `summary` + `inputs` from the
+    # POST /simulate/ response.
+    simulation_snapshot: dict = {}
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "title":    "🔴 Simulation Alert: VERY HIGH Flood Risk",
+                "message":  "Rainfall: 80mm/h | ...",
+                "category": "Weather",
+                "priority": "High",
+                "audience": "All Residents",
+                "pinned":   "Yes",
+                "target_barangays": [],
+                "simulation_snapshot": {}
+            }
+        }
+
 # =========================================================
 # ROUTES
 # =========================================================
@@ -421,6 +499,139 @@ def get_simulation_history(limit: int = 10):
         raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
     history = _load_simulation_history(limit)
     return {"count": len(history), "runs": history}
+
+
+@router.post("/publish-announcement")
+def publish_announcement(request: PublishAnnouncementRequest):
+    """
+    Called by the frontend after the user confirms the
+    'Publish Announcement?' modal.
+
+    Does two things in sequence:
+      1. POSTs the announcement to the news API so it appears
+         in the Flutter NewsScreen (/api/news/all).
+      2. Sends FCM push notifications to registered device tokens,
+         optionally filtered by barangay.
+
+    Returns a summary of what was saved and how many devices
+    were notified.
+    """
+    import requests as http_requests
+
+    announcement_payload = {
+        "title":    request.title,
+        "message":  request.message,
+        "category": request.category,
+        "priority": request.priority,
+        "audience": request.audience,
+        "pinned":   request.pinned,
+        "date":     request.date or datetime.now(timezone.utc).isoformat(),
+    }
+
+    # ── 1. Save to news feed ──────────────────────────────────────────────
+    news_saved    = False
+    news_id       = None
+    news_error    = None
+    backend_url   = os.environ.get("BACKEND_URL", "https://resq-app-xsb98.ondigitalocean.app")
+    news_endpoint = f"{backend_url}/api/news"
+
+    try:
+        resp = http_requests.post(
+            news_endpoint,
+            json=announcement_payload,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data     = resp.json()
+        news_id  = str(data.get("id") or data.get("_id") or "")
+        news_saved = True
+        logger.info("Announcement posted to news feed | id=%s", news_id)
+
+    except Exception as exc:
+        news_error = str(exc)
+        logger.error("Failed to post announcement: %s", exc)
+        # Don't raise — still attempt FCM so users get notified
+
+    # ── 2. Send FCM push notifications ───────────────────────────────────
+    fcm_success = 0
+    fcm_failure = 0
+    failed_tokens: list[str] = []
+    fcm_error   = None
+
+    try:
+        tokens = _get_fcm_tokens(
+            barangays=request.target_barangays if request.target_barangays else None
+        )
+
+        if tokens and request.simulation_snapshot:
+            fcm_result    = send_simulation_notification(
+                simulation_dict=request.simulation_snapshot,
+                tokens=tokens,
+            )
+            fcm_success   = fcm_result["success_count"]
+            fcm_failure   = fcm_result["failure_count"]
+            failed_tokens = fcm_result["failed_tokens"]
+
+        elif tokens and not request.simulation_snapshot:
+            # No snapshot provided — send a simple text-only notification
+            from firebase_admin import messaging
+            from modules.simulation_notifier import _init_firebase
+            _init_firebase()
+
+            simple_msg = messaging.MulticastMessage(
+                tokens=tokens,
+                notification=messaging.Notification(
+                    title=request.title,
+                    body=request.message[:200],   # FCM body limit safety trim
+                ),
+                data={"type": "news", "notification_type": "news"},
+                android=messaging.AndroidConfig(
+                    priority="high",
+                    notification=messaging.AndroidNotificationDetails(
+                        channel_id="resq_alerts",
+                        sound="default",
+                    ),
+                ),
+            )
+            batch = messaging.send_each_for_multicast(simple_msg)
+            fcm_success = batch.success_count
+            fcm_failure = batch.failure_count
+
+        else:
+            logger.warning("No FCM tokens found — push notification skipped.")
+
+    except Exception as exc:
+        fcm_error = str(exc)
+        logger.error("FCM notification failed: %s", exc)
+
+    # ── Response ──────────────────────────────────────────────────────────
+    # Raise only if BOTH saving and FCM completely failed
+    if not news_saved and fcm_error:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "news_error": news_error,
+                "fcm_error":  fcm_error,
+            },
+        )
+
+    return {
+        "news": {
+            "saved": news_saved,
+            "id":    news_id,
+            "error": news_error,
+        },
+        "fcm": {
+            "success_count": fcm_success,
+            "failure_count": fcm_failure,
+            "failed_tokens": failed_tokens,
+            "error":         fcm_error,
+        },
+        "message": (
+            f"Announcement {'saved' if news_saved else 'NOT saved'} to news feed. "
+            f"Push notifications sent to {fcm_success} device(s)."
+        ),
+    }
 
 
 @router.post("/barangay/{barangay_id}")

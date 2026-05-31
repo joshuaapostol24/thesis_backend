@@ -18,3 +18,4 @@ pymongo
 requests
 python-dotenv
 httpx
+firebase-admin
