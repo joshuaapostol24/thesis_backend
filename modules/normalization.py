@@ -95,6 +95,60 @@ def normalize(value: float, min_val: float, max_val: float) -> float:
     return max(0.0, min(1.0, normalized))
 
 
+def normalize_rainfall(value: float, min_val: float, max_val: float) -> float:
+    """
+    Rainfall-specific normalization with overflow multiplier.
+
+    For rainfall within normal range (0 to max_val):
+        Standard min-max normalization → 0.0 to 1.0
+
+    For rainfall exceeding the threshold (> max_val):
+        Base score = 1.0 (at threshold)
+        Overflow bonus = tanh((value - max_val) / max_val) * 2.0
+        Total = 1.0 + overflow_bonus → capped at 3.0
+
+    This means:
+        rainfall = max_val (e.g. 40mm)  → 1.00
+        rainfall = max_val * 1.5        → ~1.76
+        rainfall = max_val * 2.0        → ~2.10
+        rainfall = max_val * 3.0        → ~2.58
+        rainfall = max_val * 5.0        → ~2.96
+
+    The score is then used as a weighted contribution to the
+    rule_score, so the rule engine thresholds (0.5, 1.2, 2.1, 2.7)
+    remain meaningful.
+    """
+    import math
+
+    if max_val <= min_val:
+        logger.warning(
+            "Invalid rainfall bounds (min=%.2f max=%.2f)",
+            min_val, max_val
+        )
+        return 0.0
+
+    if value <= max_val:
+        # Normal range: standard normalization
+        normalized = (value - min_val) / (max_val - min_val)
+        return max(0.0, min(1.0, normalized))
+
+    # Overflow: value exceeds threshold
+    # tanh grows quickly near threshold then plateaus — avoids instant VERY HIGH
+    overflow     = value - max_val
+    overflow_pct = overflow / max_val   # e.g. 60mm / 40mm = 0.5 = 50% over
+    bonus        = math.tanh(overflow_pct * 1.5) * 2.0
+
+    result = 1.0 + bonus  # range: 1.0 → 3.0
+
+    logger.info(
+        "Rainfall overflow | value=%.1f threshold=%.1f "
+        "overflow_pct=%.2f bonus=%.4f result=%.4f",
+        value, max_val, overflow_pct, bonus, result
+    )
+
+    return min(3.0, result)
+
+
 def get_indicator_bounds(
     indicator: str,
     barangay_id: int
@@ -179,11 +233,19 @@ def compute_weighted_scores(
             barangay_id
         )
 
-        normalized = normalize(
-            raw_value,
-            min_val,
-            max_val
-        )
+        # Use overflow-aware normalization for rainfall
+        if indicator == "rainfall":
+            normalized = normalize_rainfall(
+                raw_value,
+                min_val,
+                max_val
+            )
+        else:
+            normalized = normalize(
+                raw_value,
+                min_val,
+                max_val
+            )
 
         weight = weight_set.get(
             indicator,

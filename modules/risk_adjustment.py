@@ -6,9 +6,11 @@ DRY_RAINFALL_MM = 2.0
 YELLOW_RAINFALL_MM = 7.5
 ORANGE_RAINFALL_MM = 15.0
 RED_RAINFALL_MM = 30.0
+EXTREME_RAINFALL_MM = 60.0
 MODERATE_RAINFALL_SCORE_FLOOR = 0.9
 HIGH_RAINFALL_SCORE_FLOOR = 1.5
 VERY_HIGH_RAINFALL_SCORE_FLOOR = 1.8
+EXTREME_RAINFALL_SCORE_FLOOR = 2.4
 MAX_FINAL_RISK = 3.0
 MAX_ML_SCORE = 3.0
 MAX_RULE_SCORE = 1.0
@@ -85,6 +87,22 @@ def apply_rainfall_adjustment(
             barangay_id, rainfall, final_risk, adjusted,
         )
         return adjusted
+
+    # ── Extreme: > 60 mm/hr — enforce near VERY HIGH floor ──────────
+    # Rainfall this extreme should always trigger severe risk
+
+    if rainfall > EXTREME_RAINFALL_MM:
+        import math
+        # Progressive boost: every 20mm above 60mm adds ~0.1 more floor
+        overflow     = rainfall - EXTREME_RAINFALL_MM
+        extra_boost  = math.tanh(overflow / 40.0) * 0.5
+        extreme_floor = min(MAX_FINAL_RISK, EXTREME_RAINFALL_SCORE_FLOOR + extra_boost + _hazard_boost)
+        adjusted = max(final_risk, extreme_floor)
+        logger.info(
+            "Barangay %s | extreme rainfall %.2f mm | floor=%.4f | %.4f → %.4f",
+            barangay_id, rainfall, extreme_floor, final_risk, adjusted,
+        )
+        return min(MAX_FINAL_RISK, adjusted)
 
     # ── Red: > 30 mm/hr — enforce VERY HIGH floor ────────────────────
 
