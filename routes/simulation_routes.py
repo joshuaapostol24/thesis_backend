@@ -315,44 +315,47 @@ def _build_announcement_payload(
     top_level    = top["risk_level"]
     top_priority = _RISK_PRIORITY.get(top_level, "High")
 
-    title = (
-        f"{_risk_emoji(top_level)} Simulation Alert: {top_level} Flood Risk Detected "
-        f"in {len(high_risk)} Barangay{'s' if len(high_risk) > 1 else ''}"
-    )
+    count        = len(high_risk)
+    barangay_names = ", ".join(b["barangay_name"] for b in high_risk)
 
-    weather_line = (
-        f"Simulated conditions — "
-        f"Rainfall: {inputs.get('rainfall', 0):.1f} mm/h | "
-        f"Wind: {inputs.get('wind_speed', 0):.1f} km/h | "
-        f"Humidity: {inputs.get('humidity', 0):.1f}% | "
-        f"Temp: {inputs.get('temperature', 0):.1f}°C"
+    title = (
+        f"{_risk_emoji(top_level)} Flood Risk Alert: {count} Barangay"
+        f"{'s' if count > 1 else ''} at {top_level} Risk"
     )
 
     barangay_lines = "\n".join(
-        f"  {_risk_emoji(b['risk_level'])} {b['barangay_name']} "
-        f"— {b['risk_level']} (score: {b['final_score']:.2f})"
+        f"  {_risk_emoji(b['risk_level'])} {b['barangay_name']} — {b['risk_level']}"
         for b in high_risk
     )
 
     summary      = simulation_dict.get("summary", {})
-    summary_line = (
-        f"Summary: Very High: {summary.get('very_high', 0)} | "
-        f"High: {summary.get('high', 0)} | "
-        f"Moderate: {summary.get('moderate', 0)} | "
-        f"Low: {summary.get('low', 0)}"
-    )
 
     message = (
-        f"{weather_line}\n\n"
-        f"⚠️ High-risk barangays:\n{barangay_lines}\n\n"
-        f"{summary_line}\n\n"
-        f"This is an automated simulation alert. "
-        f"Please verify with live sensor data before issuing evacuation orders."
+        f"⚠️ A flood risk simulation has detected {top_level.lower()} risk conditions "
+        f"in {count} barangay{'s' if count > 1 else ''} in the Municipality of Mamburao.\n\n"
+        f"Affected barangays:\n{barangay_lines}\n\n"
+        f"Current weather conditions:\n"
+        f"  🌧 Rainfall: {inputs.get('rainfall', 0):.1f} mm/h\n"
+        f"  💧 Humidity: {inputs.get('humidity', 0):.1f}%\n"
+        f"  💨 Wind Speed: {inputs.get('wind_speed', 0):.1f} km/h\n"
+        f"  🌡 Temperature: {inputs.get('temperature', 0):.1f}°C\n\n"
+        f"📋 What residents should do now:\n"
+        f"  • Stay alert and monitor official announcements\n"
+        f"  • Prepare emergency supplies (water, food for 3 days, medicines)\n"
+        f"  • Know your nearest evacuation center\n"
+        f"  • Keep important documents in a waterproof bag\n"
+        f"  • Avoid low-lying areas and stay away from rivers and canals\n"
+        f"  • Be ready to evacuate if ordered by local authorities\n\n"
+        f"Risk Summary: Very High: {summary.get('very_high', 0)} | "
+        f"High: {summary.get('high', 0)} | "
+        f"Moderate: {summary.get('moderate', 0)} | "
+        f"Low: {summary.get('low', 0)}\n\n"
+        f"For emergencies, contact the Municipal DRRMO immediately."
     )
 
     return {
         "title":    title,
-        "category": "Weather",
+        "category": "Emergency",
         "priority": top_priority,
         "date":     datetime.now(timezone.utc).isoformat(),
         "audience": "All Residents",
