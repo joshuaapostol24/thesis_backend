@@ -1,2 +1,28 @@
+[project]
+name = "thesis-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "bcrypt==4.0.1",
+    "email-validator",
+    "fastapi",
+    "firebase-admin",
+    "httpx",
+    "numpy",
+    "pandas",
+    "passlib[bcrypt]",
+    "psycopg2-binary",
+    "pydantic",
+    "PyJWT",
+    "pymongo",
+    "python-dotenv",
+    "python-multipart",
+    "requests",
+    "sqlalchemy",
+    "supabase",
+    "torch",
+    "uvicorn[standard]",
+]
+
 [tool.vercel]
 entrypoint = "main_api:app"
