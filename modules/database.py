@@ -10,8 +10,27 @@ logger = logging.getLogger(__name__)
 # Raises RuntimeError on startup if env vars are missing — intentional.
 DATABASE_URL = get_database_url()
 
+
+def _sqlalchemy_database_url(url: str) -> str:
+    """Force SQLAlchemy to use the installed psycopg2 driver."""
+    if url.startswith("postgresql+psycopg://"):
+        return url.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
+def _psycopg2_database_url(url: str) -> str:
+    """psycopg2 expects a plain PostgreSQL URL without SQLAlchemy driver tags."""
+    if url.startswith("postgresql+psycopg2://"):
+        return url.replace("postgresql+psycopg2://", "postgresql://", 1)
+    if url.startswith("postgresql+psycopg://"):
+        return url.replace("postgresql+psycopg://", "postgresql://", 1)
+    return url
+
+
 engine = create_engine(
-    DATABASE_URL,
+    _sqlalchemy_database_url(DATABASE_URL),
     pool_pre_ping=True,
     pool_recycle=300,
     pool_size=10,
@@ -40,7 +59,7 @@ def get_connection():
     Prefer using `engine` via SQLAlchemy for new code — this exists for
     legacy callers that use cursor-based queries.
     """
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(_psycopg2_database_url(DATABASE_URL))
 
 
 def list_barangay_profiles() -> list:

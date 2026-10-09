@@ -87,6 +87,10 @@ def get_database_url() -> str:
 # =========================================================
 
 def _ensure_sslmode(url: str) -> str:
+    if url.startswith("postgresql+psycopg2://"):
+        url = url.replace("postgresql+psycopg2://", "postgresql://", 1)
+    if url.startswith("postgresql+psycopg://"):
+        url = url.replace("postgresql+psycopg://", "postgresql://", 1)
     if "sslmode=" in url:
         return url
     separator = "&" if "?" in url else "?"
